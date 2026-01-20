@@ -1,0 +1,797 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>English Transfer Assistant - AI文本纠错</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@300;400;500;600;700&family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        * {
+            font-family: 'Open Sans', sans-serif;
+        }
+
+        h1, h2, h3, h4, h5, h6 {
+            font-family: 'Poppins', sans-serif;
+        }
+
+        body {
+            background: linear-gradient(135deg, #0f172a 0%, #1e3a5f 50%, #0f172a 100%);
+            min-height: 100vh;
+        }
+
+        .glass-nav {
+            background: rgba(30, 58, 95, 0.4);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .glass-card {
+            background: rgba(30, 58, 95, 0.35);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .glass-card-light {
+            background: rgba(59, 130, 246, 0.08);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            border: 1px solid rgba(59, 130, 246, 0.15);
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #3B82F6 0%, #2563EB 100%);
+            transition: all 0.2s ease;
+        }
+
+        .btn-primary:hover {
+            background: linear-gradient(135deg, #2563EB 0%, #1D4ED8 100%);
+            transform: translateY(-1px);
+            box-shadow: 0 8px 25px rgba(59, 130, 246, 0.3);
+        }
+
+        .btn-secondary {
+            background: rgba(71, 85, 105, 0.5);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            transition: all 0.2s ease;
+        }
+
+        .btn-secondary:hover {
+            background: rgba(71, 85, 105, 0.7);
+            border-color: rgba(59, 130, 246, 0.3);
+        }
+
+        .mode-switch {
+            background: rgba(30, 58, 95, 0.5);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .mode-option {
+            transition: all 0.2s ease;
+        }
+
+        .mode-option.active {
+            background: rgba(59, 130, 246, 0.2);
+            border-color: #3B82F6;
+        }
+
+        textarea:focus, input:focus {
+            outline: none;
+            border-color: rgba(59, 130, 246, 0.5);
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+        }
+
+        /* 错误高亮样式 - 线框风格 */
+        .error-highlight {
+            cursor: help;
+            transition: all 0.15s ease;
+        }
+
+        .error-grammar {
+            border-bottom: 2px dashed #F87171;
+            padding: 0 2px;
+            background: rgba(239, 68, 68, 0.1);
+        }
+
+        .error-tense {
+            border-bottom: 2px dashed #FB923C;
+            padding: 0 2px;
+            background: rgba(249, 115, 22, 0.1);
+        }
+
+        .error-word {
+            border-bottom: 2px dashed #A78BFA;
+            padding: 0 2px;
+            background: rgba(168, 85, 247, 0.1);
+        }
+
+        .error-chinese {
+            border-bottom: 2px dashed #F472B6;
+            padding: 0 2px;
+            background: rgba(236, 72, 153, 0.1);
+        }
+
+        .correction-text {
+            color: #4ADE80;
+            font-weight: 500;
+        }
+
+        /* 区域折叠样式 */
+        .panel-collapsed {
+            height: 48px;
+            overflow: hidden;
+        }
+
+        .panel-content {
+            transition: all 0.3s ease;
+        }
+
+        /* 统计卡片 */
+        .stat-card {
+            background: rgba(30, 58, 95, 0.3);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            transition: all 0.2s ease;
+        }
+
+        .stat-card:hover {
+            background: rgba(59, 130, 246, 0.12);
+            border-color: rgba(59, 130, 246, 0.3);
+        }
+
+        /* 错误卡片 */
+        .error-card {
+            background: rgba(30, 58, 95, 0.4);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            transition: all 0.2s ease;
+        }
+
+        .error-card:hover {
+            background: rgba(30, 58, 95, 0.5);
+            border-color: rgba(59, 130, 246, 0.3);
+        }
+
+        .error-card-grammar { border-left: 3px solid #F87171; }
+        .error-card-tense { border-left: 3px solid #FB923C; }
+        .error-card-word { border-left: 3px solid #A78BFA; }
+        .error-card-chinese { border-left: 3px solid #F472B6; }
+
+        /* 滚动条 */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: rgba(30, 58, 95, 0.2);
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: rgba(59, 130, 246, 0.3);
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(59, 130, 246, 0.5);
+        }
+
+        /* 标签切换 */
+        .tab-btn {
+            background: transparent;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            transition: all 0.2s ease;
+        }
+
+        .tab-btn:hover {
+            background: rgba(59, 130, 246, 0.1);
+        }
+
+        .tab-btn.active {
+            background: rgba(59, 130, 246, 0.2);
+            border-color: #3B82F6;
+            color: #60A5FA;
+        }
+
+        /* 加载动画 */
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .loading {
+            animation: pulse 1.5s ease-in-out infinite;
+        }
+    </style>
+</head>
+<body class="text-slate-200">
+    <!-- 导航栏 -->
+    <nav class="glass-nav fixed top-0 left-0 right-0 z-50 px-6 py-4">
+        <div class="max-w-7xl mx-auto flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center">
+                    <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5h12M9 3v2m1.048 9.5A18.022 18.022 0 016.412 9m6.088 9h7M11 21l5-10 5 10M12.751 5C11.783 10.77 8.07 15.61 3 18.129"/>
+                    </svg>
+                </div>
+                <div>
+                    <span class="text-lg font-bold text-white">English Transfer</span>
+                    <span class="bg-gradient-to-r from-orange-500 to-orange-400 bg-clip-text text-transparent font-bold">Assistant</span>
+                </div>
+            </div>
+
+            <div class="hidden md:flex items-center gap-6">
+                <a href="#" class="text-slate-300 hover:text-white transition-colors">首页</a>
+                <a href="#" class="text-slate-300 hover:text-white transition-colors">历史记录</a>
+                <a href="#" class="text-slate-300 hover:text-white transition-colors">统计分析</a>
+                <a href="#" class="text-slate-300 hover:text-white transition-colors">学习资源</a>
+            </div>
+
+            <div class="flex items-center gap-3">
+                <button class="p-2 rounded-lg hover:bg-slate-700/50 transition-colors">
+                    <svg class="w-5 h-5 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                    </svg>
+                </button>
+                <button class="btn-primary px-5 py-2 rounded-lg text-white font-medium">
+                    登录
+                </button>
+            </div>
+        </div>
+    </nav>
+
+    <!-- 布局快速切换按钮 -->
+    <div class="fixed top-20 right-6 z-40 flex flex-col gap-2">
+        <button onclick="setLayout('three')" class="layout-btn glass-card px-3 py-2 rounded-lg text-xs hover:bg-slate-700/50 transition-colors" title="三栏布局">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"/>
+            </svg>
+        </button>
+        <button onclick="setLayout('input-compare')" class="layout-btn glass-card px-3 py-2 rounded-lg text-xs hover:bg-slate-700/50 transition-colors" title="输入+对照">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h12M4 10h12M4 14h12"/>
+            </svg>
+        </button>
+        <button onclick="setLayout('input-analysis')" class="layout-btn glass-card px-3 py-2 rounded-lg text-xs hover:bg-slate-700/50 transition-colors" title="输入+分析">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
+            </svg>
+        </button>
+        <button onclick="setLayout('compare-full')" class="layout-btn glass-card px-3 py-2 rounded-lg text-xs hover:bg-slate-700/50 transition-colors" title="全屏对照">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"/>
+            </svg>
+        </button>
+    </div>
+
+    <!-- 主内容区 -->
+    <main class="pt-24 px-6 pb-8">
+        <div class="max-w-7xl mx-auto">
+            <!-- 页面标题 -->
+            <div class="text-center mb-6">
+                <h1 class="text-3xl font-bold text-white mb-2">
+                    <span class="bg-gradient-to-r from-blue-400 to-blue-300 bg-clip-text text-transparent">AI文本纠错</span>
+                    <span class="text-white">与分析</span>
+                </h1>
+                <p class="text-slate-400 text-base">粘贴任何英文文本，智能纠错并深度分析错误</p>
+            </div>
+
+            <!-- 三栏布局 -->
+            <div class="grid grid-cols-12 gap-4" id="main-layout">
+                <!-- 左栏：输入区 -->
+                <div class="col-span-12 md:col-span-3" id="input-panel">
+                    <div class="glass-card rounded-xl overflow-hidden h-full">
+                        <!-- 标题栏 -->
+                        <div class="flex items-center justify-between px-4 py-3 border-b border-slate-700/50">
+                            <h2 class="font-semibold text-white">文本输入</h2>
+                            <button onclick="togglePanel('input-panel')" class="p-1 hover:bg-slate-700/50 rounded transition-colors">
+                                <svg class="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                                </svg>
+                            </button>
+                        </div>
+
+                        <!-- 内容区 -->
+                        <div class="panel-content p-4">
+                            <!-- 纠正模式切换 -->
+                            <div class="mode-switch rounded-lg p-1 mb-4">
+                                <div class="flex gap-1">
+                                    <button onclick="setMode('accuracy')" class="mode-option active flex-1 px-3 py-2 rounded text-sm font-medium">
+                                        🎯 准确性优先
+                                    </button>
+                                    <button onclick="setMode('natural')" class="mode-option flex-1 px-3 py-2 rounded text-sm font-medium">
+                                        ✨ 自然度优先
+                                    </button>
+                                </div>
+                                <p class="text-xs text-slate-400 mt-2 px-2" id="mode-description">
+                                    纠正语法错误，保留原本风格
+                                </p>
+                            </div>
+
+                            <!-- 输入框 -->
+                            <textarea
+                                id="input-text"
+                                class="w-full h-64 bg-slate-900/50 border border-slate-700 rounded-lg p-4 text-slate-200 text-sm resize-none"
+                                placeholder="粘贴任何英文文本...
+
+支持：
+• 对话（A: ... B: ...）
+• 邮件、作文、演讲稿
+• 日常表达
+• 中英夹杂
+
+AI 会自动识别文本类型并纠错"
+                            ></textarea>
+
+                            <!-- 字符计数 -->
+                            <div class="flex justify-between items-center mt-2 text-xs text-slate-400">
+                                <span id="char-count">0 / 5000</span>
+                                <span class="text-slate-500">字符</span>
+                            </div>
+
+                            <!-- 操作按钮 -->
+                            <div class="mt-4 space-y-2">
+                                <button onclick="analyzeText()" class="btn-primary w-full py-3 rounded-lg text-white font-semibold flex items-center justify-center gap-2">
+                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                                    </svg>
+                                    分析文本
+                                </button>
+
+                                <div class="flex gap-2">
+                                    <button class="btn-secondary flex-1 py-2 rounded-lg text-sm font-medium flex items-center justify-center gap-2">
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
+                                        </svg>
+                                        导入文件
+                                    </button>
+                                    <button onclick="clearInput()" class="btn-secondary flex-1 py-2 rounded-lg text-sm font-medium flex items-center justify-center gap-2">
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                                        </svg>
+                                        清空
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- 支持格式 -->
+                            <div class="mt-4 pt-4 border-t border-slate-700/50">
+                                <p class="text-xs text-slate-500 mb-2">支持格式</p>
+                                <div class="flex flex-wrap gap-2">
+                                    <span class="px-2 py-1 bg-slate-800/50 rounded text-xs text-slate-400">TXT</span>
+                                    <span class="px-2 py-1 bg-slate-800/50 rounded text-xs text-slate-400">JSON</span>
+                                    <span class="px-2 py-1 bg-slate-800/50 rounded text-xs text-slate-400">Markdown</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 中栏：对照区 -->
+                <div class="col-span-12 md:col-span-5" id="compare-panel">
+                    <div class="glass-card rounded-xl overflow-hidden h-full">
+                        <!-- 标题栏 -->
+                        <div class="flex items-center justify-between px-4 py-3 border-b border-slate-700/50">
+                            <h2 class="font-semibold text-white">纠错对照</h2>
+                            <button onclick="togglePanel('compare-panel')" class="p-1 hover:bg-slate-700/50 rounded transition-colors">
+                                <svg class="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                                </svg>
+                            </button>
+                        </div>
+
+                        <!-- 内容区 -->
+                        <div class="panel-content p-4">
+                            <!-- 视图切换 -->
+                            <div class="flex gap-2 mb-4">
+                                <button onclick="setView('sidebyside')" class="tab-btn active flex-1 px-3 py-2 rounded-lg text-sm font-medium">
+                                    ⇄ 并排对照
+                                </button>
+                                <button onclick="setView('original')" class="tab-btn flex-1 px-3 py-2 rounded-lg text-sm font-medium">
+                                    ⎔ 仅原文
+                                </button>
+                                <button onclick="setView('corrected')" class="tab-btn flex-1 px-3 py-2 rounded-lg text-sm font-medium">
+                                    ✓ 仅纠正后
+                                </button>
+                            </div>
+
+                            <!-- 错误统计面板 -->
+                            <div class="grid grid-cols-4 gap-2 mb-4">
+                                <div class="stat-card rounded-lg p-3 text-center">
+                                    <div class="text-xs text-slate-400 mb-1">━━</div>
+                                    <div class="text-2xl font-bold text-red-400">4</div>
+                                    <div class="text-xs text-slate-500">语法</div>
+                                </div>
+                                <div class="stat-card rounded-lg p-3 text-center">
+                                    <div class="text-xs text-slate-400 mb-1">↻</div>
+                                    <div class="text-2xl font-bold text-orange-400">3</div>
+                                    <div class="text-xs text-slate-500">时态</div>
+                                </div>
+                                <div class="stat-card rounded-lg p-3 text-center">
+                                    <div class="text-xs text-slate-400 mb-1">Aa</div>
+                                    <div class="text-2xl font-bold text-purple-400">2</div>
+                                    <div class="text-xs text-slate-500">单词</div>
+                                </div>
+                                <div class="stat-card rounded-lg p-3 text-center">
+                                    <div class="text-xs text-slate-400 mb-1">文</div>
+                                    <div class="text-2xl font-bold text-pink-400">1</div>
+                                    <div class="text-xs text-slate-500">中英混用</div>
+                                </div>
+                            </div>
+
+                            <!-- 对照内容 -->
+                            <div class="space-y-3">
+                                <!-- 示例 1 -->
+                                <div class="glass-card-light rounded-lg p-4">
+                                    <div class="flex items-center gap-2 mb-2">
+                                        <div class="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center text-white text-xs font-semibold">A</div>
+                                        <span class="text-sm font-medium text-slate-300">Speaker A</span>
+                                    </div>
+                                    <p class="text-slate-200 text-sm mb-2">
+                                        Hi, how are you today?
+                                    </p>
+                                    <div class="flex items-center gap-1 text-xs">
+                                        <span class="text-green-400">✓</span>
+                                        <span class="text-slate-500">无错误</span>
+                                    </div>
+                                </div>
+
+                                <!-- 示例 2 - 有错误 -->
+                                <div class="glass-card-light rounded-lg p-4">
+                                    <div class="flex items-center gap-2 mb-2">
+                                        <div class="w-8 h-8 rounded-full bg-gradient-to-br from-orange-500 to-orange-600 flex items-center justify-center text-white text-xs font-semibold">B</div>
+                                        <span class="text-sm font-medium text-slate-300">Speaker B</span>
+                                    </div>
+                                    <div class="mb-3">
+                                        <p class="text-xs text-slate-500 mb-1">原文</p>
+                                        <p class="text-slate-200 text-sm">
+                                            I'm good, thanks. I <span class="error-tense">go</span> to the park <span class="error-tense">yesterday</span> with my friend. We <span class="error-grammar">was</span> playing basketball and it <span class="error-word">very</span> fun.
+                                        </p>
+                                    </div>
+                                    <div class="pt-3 border-t border-slate-700/50">
+                                        <p class="text-xs text-slate-500 mb-1">纠正后</p>
+                                        <p class="text-sm">
+                                            I'm good, thanks. I <span class="correction-text">went</span> to the park yesterday with my friend. We <span class="correction-text">were</span> playing basketball and it <span class="correction-text">was very</span> fun.
+                                        </p>
+                                    </div>
+                                </div>
+
+                                <!-- 示例 3 - 中英混用 -->
+                                <div class="glass-card-light rounded-lg p-4">
+                                    <div class="flex items-center gap-2 mb-2">
+                                        <div class="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center text-white text-xs font-semibold">A</div>
+                                        <span class="text-sm font-medium text-slate-300">Speaker A</span>
+                                    </div>
+                                    <div class="mb-3">
+                                        <p class="text-xs text-slate-500 mb-1">原文</p>
+                                        <p class="text-slate-200 text-sm">
+                                            That sounds <span class="error-chinese">很</span> interesting! Do you <span class="error-grammar">basketball</span> often?
+                                        </p>
+                                    </div>
+                                    <div class="pt-3 border-t border-slate-700/50">
+                                        <p class="text-xs text-slate-500 mb-1">纠正后</p>
+                                        <p class="text-sm">
+                                            That sounds <span class="correction-text">very</span> interesting! Do you <span class="correction-text">play basketball</span> often?
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- 底部操作 -->
+                            <div class="mt-4 pt-4 border-t border-slate-700/50 flex gap-2">
+                                <button class="btn-secondary flex-1 py-2 rounded-lg text-sm font-medium flex items-center justify-center gap-2">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                                    </svg>
+                                    导出
+                                </button>
+                                <button class="btn-secondary flex-1 py-2 rounded-lg text-sm font-medium flex items-center justify-center gap-2">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z"/>
+                                    </svg>
+                                    保存
+                                </button>
+                                <button class="btn-secondary flex-1 py-2 rounded-lg text-sm font-medium flex items-center justify-center gap-2">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                                    </svg>
+                                    重新分析
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 右栏：分析区 -->
+                <div class="col-span-12 md:col-span-4" id="analysis-panel">
+                    <div class="glass-card rounded-xl overflow-hidden h-full">
+                        <!-- 标题栏 -->
+                        <div class="flex items-center justify-between px-4 py-3 border-b border-slate-700/50">
+                            <h2 class="font-semibold text-white">错误分析</h2>
+                            <button onclick="togglePanel('analysis-panel')" class="p-1 hover:bg-slate-700/50 rounded transition-colors">
+                                <svg class="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                                </svg>
+                            </button>
+                        </div>
+
+                        <!-- 内容区 -->
+                        <div class="panel-content p-4">
+                            <!-- 搜索和筛选 -->
+                            <div class="flex gap-2 mb-4">
+                                <input type="text" placeholder="搜索错误..." class="flex-1 bg-slate-900/50 border border-slate-700 rounded-lg px-3 py-2 text-sm">
+                                <button class="btn-secondary px-3 py-2 rounded-lg">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"/>
+                                    </svg>
+                                </button>
+                            </div>
+
+                            <!-- 错误卡片 -->
+                            <div class="space-y-3 max-h-96 overflow-y-auto pr-2">
+                                <!-- 语法错误卡片 -->
+                                <div class="error-card error-card-grammar rounded-lg p-4">
+                                    <div class="flex items-center justify-between mb-3">
+                                        <div class="flex items-center gap-2">
+                                            <div class="w-8 h-8 rounded-lg bg-red-500/20 flex items-center justify-center">
+                                                <span class="text-xs text-slate-400">━━</span>
+                                            </div>
+                                            <div>
+                                                <div class="font-medium text-white text-sm">语法错误</div>
+                                                <div class="text-xs text-slate-500">Grammar</div>
+                                            </div>
+                                        </div>
+                                        <span class="px-2 py-1 bg-red-500/20 rounded text-xs text-red-400 font-semibold">4</span>
+                                    </div>
+
+                                    <div class="space-y-2">
+                                        <div class="bg-slate-900/50 rounded p-3">
+                                            <p class="text-sm text-slate-300 mb-1">
+                                                <span class="text-red-400">was</span> → <span class="text-green-400">were</span>
+                                            </p>
+                                            <p class="text-xs text-slate-500">主谓一致错误："We" 需要复数动词</p>
+                                        </div>
+                                        <div class="bg-slate-900/50 rounded p-3">
+                                            <p class="text-sm text-slate-300 mb-1">
+                                                Do you <span class="text-red-400">basketball</span> → <span class="text-green-400">play basketball</span>
+                                            </p>
+                                            <p class="text-xs text-slate-500">缺少动词："play" 不可省略</p>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- 时态错误卡片 -->
+                                <div class="error-card error-card-tense rounded-lg p-4">
+                                    <div class="flex items-center justify-between mb-3">
+                                        <div class="flex items-center gap-2">
+                                            <div class="w-8 h-8 rounded-lg bg-orange-500/20 flex items-center justify-center">
+                                                <span class="text-xs text-slate-400">↻</span>
+                                            </div>
+                                            <div>
+                                                <div class="font-medium text-white text-sm">时态错误</div>
+                                                <div class="text-xs text-slate-500">Tense</div>
+                                            </div>
+                                        </div>
+                                        <span class="px-2 py-1 bg-orange-500/20 rounded text-xs text-orange-400 font-semibold">3</span>
+                                    </div>
+
+                                    <div class="space-y-2">
+                                        <div class="bg-slate-900/50 rounded p-3">
+                                            <p class="text-sm text-slate-300 mb-1">
+                                                <span class="text-orange-400">go</span> → <span class="text-green-400">went</span>
+                                            </p>
+                                            <p class="text-xs text-slate-500">过去时："yesterday" 表示过去，需用过去式</p>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- 单词选择错误卡片 -->
+                                <div class="error-card error-card-word rounded-lg p-4">
+                                    <div class="flex items-center justify-between mb-3">
+                                        <div class="flex items-center gap-2">
+                                            <div class="w-8 h-8 rounded-lg bg-purple-500/20 flex items-center justify-center">
+                                                <span class="text-xs text-slate-400">Aa</span>
+                                            </div>
+                                            <div>
+                                                <div class="font-medium text-white text-sm">单词选择</div>
+                                                <div class="text-xs text-slate-500">Word Choice</div>
+                                            </div>
+                                        </div>
+                                        <span class="px-2 py-1 bg-purple-500/20 rounded text-xs text-purple-400 font-semibold">2</span>
+                                    </div>
+
+                                    <div class="space-y-2">
+                                        <div class="bg-slate-900/50 rounded p-3">
+                                            <p class="text-sm text-slate-300 mb-1">
+                                                <span class="text-purple-400">very</span> → <span class="text-green-400">was very</span>
+                                            </p>
+                                            <p class="text-xs text-slate-500">缺少系动词：形容词前需加 "was"</p>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- 中英混用错误卡片 -->
+                                <div class="error-card error-card-chinese rounded-lg p-4">
+                                    <div class="flex items-center justify-between mb-3">
+                                        <div class="flex items-center gap-2">
+                                            <div class="w-8 h-8 rounded-lg bg-pink-500/20 flex items-center justify-center">
+                                                <span class="text-xs text-slate-400">文</span>
+                                            </div>
+                                            <div>
+                                                <div class="font-medium text-white text-sm">中英混用</div>
+                                                <div class="text-xs text-slate-500">Mixed Language</div>
+                                            </div>
+                                        </div>
+                                        <span class="px-2 py-1 bg-pink-500/20 rounded text-xs text-pink-400 font-semibold">1</span>
+                                    </div>
+
+                                    <div class="space-y-2">
+                                        <div class="bg-slate-900/50 rounded p-3">
+                                            <p class="text-sm text-slate-300 mb-1">
+                                                <span class="text-pink-400">很</span> → <span class="text-green-400">very</span>
+                                            </p>
+                                            <p class="text-xs text-slate-500">中英混用：建议使用英文 "very"</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- 学习建议 -->
+                            <div class="mt-4 pt-4 border-t border-slate-700/50">
+                                <div class="glass-card-light rounded-lg p-4">
+                                    <div class="flex items-center gap-2 mb-2">
+                                        <svg class="w-4 h-4 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/>
+                                        </svg>
+                                        <span class="text-sm font-medium text-white">学习建议</span>
+                                    </div>
+                                    <p class="text-xs text-slate-400 mb-2">你最容易犯时态错误（43%）</p>
+                                    <p class="text-xs text-slate-500 mb-3">建议重点复习不规则动词表和过去时态用法</p>
+                                    <button class="w-full btn-primary py-2 rounded-lg text-sm font-medium">
+                                        开始练习 →
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- 页脚 -->
+    <footer class="mt-8 px-6 py-4 border-t border-slate-800">
+        <div class="max-w-7xl mx-auto flex items-center justify-between text-sm text-slate-500">
+            <p>© 2025 English Transfer Assistant. All rights reserved.</p>
+            <div class="flex gap-6">
+                <a href="#" class="hover:text-slate-400 transition-colors">隐私政策</a>
+                <a href="#" class="hover:text-slate-400 transition-colors">服务条款</a>
+                <a href="#" class="hover:text-slate-400 transition-colors">联系我们</a>
+            </div>
+        </div>
+    </footer>
+
+    <script>
+        // 纠正模式切换
+        function setMode(mode) {
+            const options = document.querySelectorAll('.mode-option');
+            options.forEach(opt => opt.classList.remove('active'));
+
+            const description = document.getElementById('mode-description');
+
+            if (mode === 'accuracy') {
+                options[0].classList.add('active');
+                description.textContent = '纠正语法错误，保留原本风格';
+            } else {
+                options[1].classList.add('active');
+                description.textContent = '改写成地道表达，可能调整结构';
+            }
+        }
+
+        // 视图切换
+        function setView(view) {
+            const buttons = document.querySelectorAll('.tab-btn');
+            buttons.forEach(btn => btn.classList.remove('active'));
+
+            if (view === 'sidebyside') {
+                buttons[0].classList.add('active');
+            } else if (view === 'original') {
+                buttons[1].classList.add('active');
+            } else if (view === 'corrected') {
+                buttons[2].classList.add('active');
+            }
+        }
+
+        // 区域折叠
+        function togglePanel(panelId) {
+            const panel = document.getElementById(panelId);
+            panel.classList.toggle('panel-collapsed');
+        }
+
+        // 布局切换
+        function setLayout(layout) {
+            const inputPanel = document.getElementById('input-panel');
+            const comparePanel = document.getElementById('compare-panel');
+            const analysisPanel = document.getElementById('analysis-panel');
+
+            // 重置所有面板
+            inputPanel.classList.remove('hidden');
+            comparePanel.classList.remove('hidden');
+            analysisPanel.classList.remove('hidden');
+
+            if (layout === 'three') {
+                inputPanel.classList.remove('md:col-span-6', 'md:col-span-8');
+                inputPanel.classList.add('md:col-span-3');
+                comparePanel.classList.remove('md:col-span-6', 'md:col-span-12');
+                comparePanel.classList.add('md:col-span-5');
+                analysisPanel.classList.remove('hidden');
+                analysisPanel.classList.add('md:col-span-4');
+            } else if (layout === 'input-compare') {
+                inputPanel.classList.remove('md:col-span-3');
+                inputPanel.classList.add('md:col-span-4');
+                comparePanel.classList.remove('md:col-span-3', 'md:col-span-5');
+                comparePanel.classList.add('md:col-span-8');
+                analysisPanel.classList.add('hidden');
+            } else if (layout === 'input-analysis') {
+                inputPanel.classList.remove('md:col-span-3');
+                inputPanel.classList.add('md:col-span-4');
+                comparePanel.classList.add('hidden');
+                analysisPanel.classList.remove('hidden', 'md:col-span-4');
+                analysisPanel.classList.add('md:col-span-8');
+            } else if (layout === 'compare-full') {
+                inputPanel.classList.add('hidden');
+                comparePanel.classList.remove('md:col-span-5');
+                comparePanel.classList.add('md:col-span-12');
+                analysisPanel.classList.add('hidden');
+            }
+        }
+
+        // 分析文本
+        function analyzeText() {
+            const input = document.getElementById('input-text').value;
+            const charCount = document.getElementById('char-count');
+
+            if (!input.trim()) {
+                alert('请输入或粘贴文本');
+                return;
+            }
+
+            if (input.length > 5000) {
+                alert('文本超出 5000 字符限制，请分段处理');
+                return;
+            }
+
+            // 模拟分析过程
+            const button = event.target;
+            const originalText = button.innerHTML;
+            button.innerHTML = '<span class="loading">分析中...</span>';
+            button.disabled = true;
+
+            setTimeout(() => {
+                button.innerHTML = originalText;
+                button.disabled = false;
+                alert('分析完成！（这是演示，实际需要连接后端 API）');
+            }, 1500);
+        }
+
+        // 清空输入
+        function clearInput() {
+            document.getElementById('input-text').value = '';
+            updateCharCount();
+        }
+
+        // 更新字符计数
+        function updateCharCount() {
+            const input = document.getElementById('input-text');
+            const count = document.getElementById('char-count');
+            count.textContent = `${input.value.length} / 5000`;
+        }
+
+        // 初始化
+        document.getElementById('input-text').addEventListener('input', updateCharCount);
+    </script>
+</body>
+</html>
