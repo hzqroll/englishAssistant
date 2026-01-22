@@ -30,6 +30,61 @@
 
 ## 🚀 快速开始
 
+### 环境要求
+
+- **Python**: 3.11+ (需要兼容 Python 3.11-3.13)
+- **Node.js**: 18+
+- **Poetry**: 1.8+ (依赖管理)
+- **Docker**: 20.10+ (PostgreSQL 和 Redis)
+- **Docker Compose**: 2.0+
+
+### 一键启动开发环境
+
+```bash
+# 1. 启动所有服务 (Docker + 后端 + 前端)
+./scripts/dev.sh
+
+# 2. 访问应用
+# Frontend: http://localhost:5173
+# Backend API: http://localhost:8000
+# API Docs: http://localhost:8000/docs
+
+# 3. 停止服务 (Ctrl+C 或手动)
+# docker-compose down
+# pkill -f "uvicorn|vite"
+```
+
+### 手动启动
+
+**启动 Docker 服务 (PostgreSQL + Redis):**
+```bash
+docker-compose up -d
+```
+
+**启动后端服务:**
+```bash
+cd backend
+poetry install  # 首次运行
+poetry run uvicorn main:app --reload --port 8000
+```
+
+**启动前端服务:**
+```bash
+cd frontend
+npm install  # 首次运行
+npm run dev
+```
+
+### 验证安装
+
+```bash
+# 运行完整验证脚本
+./scripts/verify.sh
+
+# 运行测试
+./scripts/test.sh
+```
+
 ### 查看文档
 
 ```bash
@@ -38,6 +93,51 @@ cat docs/README.md
 
 # 查看 UI 设计（在浏览器中打开）
 open docs/02-ui-design/ui-final.html
+```
+
+### 项目结构
+
+```
+englishAssistant/
+├── backend/                    # 后端 FastAPI 应用
+│   ├── api/                   # API 路由 (auth, analysis, history, etc.)
+│   ├── core/                  # 核心配置 (config, security)
+│   ├── models/                # SQLAlchemy 数据库模型
+│   ├── pipeline/              # 4 阶段文本分析管道
+│   ├── schemas/               # Pydantic 请求/响应模式
+│   ├── services/              # 业务逻辑服务
+│   ├── middleware/            # 中间件 (auth, rate-limit, performance)
+│   ├── utils/                 # 工具函数
+│   ├── tests/                 # 单元测试和集成测试
+│   ├── main.py                # FastAPI 应用入口
+│   └── pyproject.toml         # Poetry 依赖配置
+│
+├── frontend/                   # 前端 Vue 3 应用
+│   ├── src/
+│   │   ├── api/              # API 客户端
+│   │   ├── components/       # Vue 组件
+│   │   ├── composables/      # Composition API 函数
+│   │   ├── stores/           # Pinia 状态管理
+│   │   ├── router/           # Vue Router 路由配置
+│   │   ├── views/            # 页面视图
+│   │   ├── utils/            # 工具函数
+│   │   ├── types/            # TypeScript 类型定义
+│   │   ├── assets/           # 静态资源 (样式、图片)
+│   │   ├── App.vue           # 根组件
+│   │   └── main.ts           # 应用入口
+│   ├── index.html
+│   ├── vite.config.ts        # Vite 配置
+│   ├── tailwind.config.js    # Tailwind CSS 配置
+│   └── package.json          # NPM 依赖
+│
+├── scripts/                   # 开发辅助脚本
+│   ├── dev.sh                # 一键启动脚本
+│   ├── verify.sh             # 环境验证脚本
+│   └── test.sh               # 测试运行脚本
+│
+├── docs/                      # 项目文档
+├── docker-compose.yml         # Docker Compose 配置
+└── README.md                  # 本文件
 ```
 
 ### 文档结构
@@ -118,11 +218,18 @@ docs/
   - ✅ 技术实现方案
   - ✅ 功能点定义
   - ✅ 待办事项清单
-- **Phase 3**: ⏳ Implementation (0%)
+- **Phase 3**: 🔄 Implementation (10%)
+  - ✅ 项目框架搭建完成
+    - ✅ 后端 FastAPI 框架 + 完整模块骨架 (50+ 文件)
+    - ✅ 前端 Vue 3 + TypeScript 框架 + 完整组件骨架 (40+ 文件)
+    - ✅ Docker 开发环境配置
+    - ✅ 开发辅助脚本 (dev.sh, verify.sh, test.sh)
+  - ⏳ 数据库模型实现
+  - ⏳ 核心业务逻辑实现
 - **Phase 4**: ⏳ Testing (0%)
 - **Phase 5**: ⏳ Deployment (0%)
 
-**下一步**: 开始 Phase 3.1 - 项目初始化
+**下一步**: 实现数据库模型和 Alembic 迁移
 
 ---
 
@@ -183,4 +290,4 @@ English Transfer Assistant Team
 ---
 
 **项目状态**: 🔄 开发中
-**最后更新**: 2026-01-19
+**最后更新**: 2026-01-22
