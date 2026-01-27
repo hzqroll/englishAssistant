@@ -58,15 +58,15 @@ class PipelineResult:
             Dictionary representation
         """
         return {
-            'original_text': self.original_text,
-            'corrected_text': self.corrected_text,
-            'mode': self.mode,
-            'processing_time_ms': self.processing_time_ms,
-            'stage_times': self.stage_times,
-            'statistics': self.merged_result.statistics,
-            'errors': self.merged_result.errors,
-            'token_usage': self.llm_result.token_usage,
-            'metadata': self.metadata
+            "original_text": self.original_text,
+            "corrected_text": self.corrected_text,
+            "mode": self.mode,
+            "processing_time_ms": self.processing_time_ms,
+            "stage_times": self.stage_times,
+            "statistics": self.merged_result.statistics,
+            "errors": self.merged_result.errors,
+            "token_usage": self.llm_result.token_usage,
+            "metadata": self.metadata,
         }
 
 
@@ -96,7 +96,7 @@ class AnalysisPipeline:
         llm_engine: Optional[LLMEngine] = None,
         merger: Optional[Merger] = None,
         enable_caching: bool = True,
-        enable_llm: bool = True
+        enable_llm: bool = True,
     ):
         """
         Initialize the analysis pipeline.
@@ -117,10 +117,7 @@ class AnalysisPipeline:
         self.enable_llm = enable_llm
 
     def analyze(
-        self,
-        text: str,
-        mode: str = "accuracy",
-        user_id: Optional[str] = None
+        self, text: str, mode: str = "accuracy", user_id: Optional[str] = None
     ) -> PipelineResult:
         """
         Analyze and correct text using the 4-stage pipeline.
@@ -150,12 +147,12 @@ class AnalysisPipeline:
             # Stage 1: Preprocessing
             stage_start = time.time()
             preprocessed = self.preprocessor.preprocess(text)
-            stage_times['preprocessing'] = int((time.time() - stage_start) * 1000)
+            stage_times["preprocessing"] = int((time.time() - stage_start) * 1000)
 
             # Stage 2: Rule-based checking
             stage_start = time.time()
             rule_errors = self.rule_engine.check(text)
-            stage_times['rule_engine'] = int((time.time() - stage_start) * 1000)
+            stage_times["rule_engine"] = int((time.time() - stage_start) * 1000)
 
             # Stage 3: LLM optimization (optional)
             llm_result = None
@@ -163,25 +160,23 @@ class AnalysisPipeline:
                 stage_start = time.time()
                 try:
                     llm_result = self.llm_engine.optimize(
-                        text,
-                        mode,
-                        preprocessed.metadata.get('intent')
+                        text, mode, preprocessed.metadata.get("intent")
                     )
-                    stage_times['llm'] = int((time.time() - stage_start) * 1000)
+                    stage_times["llm"] = int((time.time() - stage_start) * 1000)
                 except LLMError as e:
                     # Graceful degradation: continue with rule-based results
-                    stage_times['llm'] = int((time.time() - stage_start) * 1000)
-                    stage_times['llm_error'] = str(e)
+                    stage_times["llm"] = int((time.time() - stage_start) * 1000)
+                    stage_times["llm_error"] = str(e)
                     # Create empty LLM result
                     llm_result = LLMResult(
                         optimized_text=text,
-                        detected_intent=preprocessed.metadata.get('intent'),
+                        detected_intent=preprocessed.metadata.get("intent"),
                         corrections=[],
                         explanation="LLM optimization failed, using rule-based results only",
                         token_usage={},
                         model="",
                         processing_time_ms=0,
-                        metadata={'error': str(e)}
+                        metadata={"error": str(e)},
                     )
 
             # Stage 4: Merging
@@ -194,7 +189,7 @@ class AnalysisPipeline:
                 corrected_text = self._apply_rule_corrections(text, rule_errors)
                 merged_result = self._create_rule_only_result(rule_errors)
 
-            stage_times['merging'] = int((time.time() - stage_start) * 1000)
+            stage_times["merging"] = int((time.time() - stage_start) * 1000)
 
             # Calculate total time
             total_time = int((time.time() - start_time) * 1000)
@@ -209,17 +204,13 @@ class AnalysisPipeline:
                 mode=mode,
                 processing_time_ms=total_time,
                 stage_times=stage_times,
-                metadata={}
+                metadata={},
             )
 
         except Exception as e:
             raise PipelineError(f"Pipeline analysis failed: {str(e)}") from e
 
-    def _apply_rule_corrections(
-        self,
-        text: str,
-        errors: list
-    ) -> str:
+    def _apply_rule_corrections(self, text: str, errors: list) -> str:
         """
         Apply rule-based corrections to text.
 
@@ -230,18 +221,20 @@ class AnalysisPipeline:
         Returns:
             Corrected text
         """
-        # TODO: Implement rule-based correction application
-        # Apply corrections from right to left to preserve positions
+        if not errors:
+            return text
+
         corrected = text
 
         sorted_errors = sorted(errors, key=lambda x: x.start_index, reverse=True)
 
         for error in sorted_errors:
-            corrected = (
-                corrected[:error.start_index] +
-                error.corrected_span +
-                corrected[error.end_index:]
-            )
+            if error.corrected_span and error.corrected_span != error.original_span:
+                start = error.start_index
+                end = error.end_index
+
+                if start >= 0 and end <= len(corrected) and start < end:
+                    corrected = corrected[:start] + error.corrected_span + corrected[end:]
 
         return corrected
 
@@ -262,18 +255,12 @@ class AnalysisPipeline:
             rule_engine_errors=errors,
             llm_corrections=[],
             overlaps=[],
-            statistics={
-                'total_errors': len(errors),
-                'error_types': {}
-            },
-            metadata={'mode': 'rule_only'}
+            statistics={"total_errors": len(errors), "error_types": {}},
+            metadata={"mode": "rule_only"},
         )
 
     def analyze_batch(
-        self,
-        texts: list,
-        mode: str = "accuracy",
-        user_id: Optional[str] = None
+        self, texts: list, mode: str = "accuracy", user_id: Optional[str] = None
     ) -> list:
         """
         Analyze multiple texts in batch.
@@ -300,7 +287,7 @@ class AnalysisPipeline:
         Returns:
             List of mode names
         """
-        return ['accuracy', 'natural']
+        return ["accuracy", "natural"]
 
     def health_check(self) -> Dict[str, Any]:
         """
@@ -311,13 +298,13 @@ class AnalysisPipeline:
         """
         # TODO: Implement health checks for each component
         return {
-            'status': 'healthy',
-            'components': {
-                'preprocessor': 'ok',
-                'rule_engine': 'ok',
-                'llm_engine': 'ok' if self.enable_llm else 'disabled',
-                'merger': 'ok'
-            }
+            "status": "healthy",
+            "components": {
+                "preprocessor": "ok",
+                "rule_engine": "ok",
+                "llm_engine": "ok" if self.enable_llm else "disabled",
+                "merger": "ok",
+            },
         }
 
 

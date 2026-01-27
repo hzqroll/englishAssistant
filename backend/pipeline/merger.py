@@ -15,6 +15,7 @@ from .llm_engine import LLMResult
 
 class ConflictResolution(Enum):
     """Strategies for resolving overlapping corrections."""
+
     RULE_ENGINE_PRIORITY = "rule_engine_priority"
     LLM_PRIORITY = "llm_priority"
     MERGE = "merge"
@@ -96,7 +97,7 @@ class Merger:
         self,
         conflict_resolution: ConflictResolution = ConflictResolution.HIGHEST_CONFIDENCE,
         allow_overlap: bool = False,
-        min_confidence: float = 0.5
+        min_confidence: float = 0.5,
     ):
         """
         Initialize the merger.
@@ -111,10 +112,7 @@ class Merger:
         self.min_confidence = min_confidence
 
     def merge(
-        self,
-        original_text: str,
-        rule_errors: List[GrammarError],
-        llm_result: LLMResult
+        self, original_text: str, rule_errors: List[GrammarError], llm_result: LLMResult
     ) -> MergedResult:
         """
         Merge rule-based and LLM correction results.
@@ -158,13 +156,11 @@ class Merger:
             llm_corrections=llm_result.corrections,
             overlaps=overlaps,
             statistics=statistics,
-            metadata={}
+            metadata={},
         )
 
     def _detect_overlaps(
-        self,
-        rule_errors: List[GrammarError],
-        llm_result: LLMResult
+        self, rule_errors: List[GrammarError], llm_result: LLMResult
     ) -> List[OverlapInfo]:
         """
         Detect overlapping corrections.
@@ -190,8 +186,8 @@ class Merger:
                 if self._positions_overlap(
                     rule_error.start_index,
                     rule_error.end_index,
-                    llm_correction.get('start_index', 0),
-                    llm_correction.get('end_index', 0)
+                    llm_correction.get("start_index", 0),
+                    llm_correction.get("end_index", 0),
                 ):
                     overlap_type = self._classify_overlap(rule_error, llm_correction)
                     overlaps.append(
@@ -200,25 +196,17 @@ class Merger:
                             llm_correction=llm_correction,
                             overlap_type=overlap_type,
                             overlap_start=max(
-                                rule_error.start_index,
-                                llm_correction.get('start_index', 0)
+                                rule_error.start_index, llm_correction.get("start_index", 0)
                             ),
                             overlap_end=min(
-                                rule_error.end_index,
-                                llm_correction.get('end_index', 0)
-                            )
+                                rule_error.end_index, llm_correction.get("end_index", 0)
+                            ),
                         )
                     )
 
         return overlaps
 
-    def _positions_overlap(
-        self,
-        start1: int,
-        end1: int,
-        start2: int,
-        end2: int
-    ) -> bool:
+    def _positions_overlap(self, start1: int, end1: int, start2: int, end2: int) -> bool:
         """
         Check if two position ranges overlap.
 
@@ -233,11 +221,7 @@ class Merger:
         """
         return not (end1 <= start2 or end2 <= start1)
 
-    def _classify_overlap(
-        self,
-        rule_error: GrammarError,
-        llm_correction: Dict[str, Any]
-    ) -> str:
+    def _classify_overlap(self, rule_error: GrammarError, llm_correction: Dict[str, Any]) -> str:
         """
         Classify type of overlap.
 
@@ -253,16 +237,13 @@ class Merger:
         # 2. Check if corrections are partial overlap
         # 3. Check if corrections conflict
 
-        if rule_error.corrected_span == llm_correction.get('corrected_span'):
+        if rule_error.corrected_span == llm_correction.get("corrected_span"):
             return "identical"
 
         return "partial"
 
     def _resolve_conflicts(
-        self,
-        rule_errors: List[GrammarError],
-        llm_result: LLMResult,
-        overlaps: List[OverlapInfo]
+        self, rule_errors: List[GrammarError], llm_result: LLMResult, overlaps: List[OverlapInfo]
     ) -> List[Dict[str, Any]]:
         """
         Resolve conflicting corrections.
@@ -291,9 +272,7 @@ class Merger:
             return self._merge_corrections(rule_errors, llm_result.corrections)
 
     def _select_highest_confidence(
-        self,
-        rule_errors: List[GrammarError],
-        llm_corrections: List[Dict[str, Any]]
+        self, rule_errors: List[GrammarError], llm_corrections: List[Dict[str, Any]]
     ) -> List[Dict[str, Any]]:
         """
         Select corrections with highest confidence.
@@ -313,15 +292,13 @@ class Merger:
                 selected.append(error.to_dict())
 
         for correction in llm_corrections:
-            if correction.get('confidence', 0) >= self.min_confidence:
+            if correction.get("confidence", 0) >= self.min_confidence:
                 selected.append(correction)
 
         return selected
 
     def _merge_corrections(
-        self,
-        rule_errors: List[GrammarError],
-        llm_corrections: List[Dict[str, Any]]
+        self, rule_errors: List[GrammarError], llm_corrections: List[Dict[str, Any]]
     ) -> List[Dict[str, Any]]:
         """
         Merge corrections from both sources.
@@ -342,17 +319,13 @@ class Merger:
             merged[key] = error.to_dict()
 
         for correction in llm_corrections:
-            key = (correction.get('start_index'), correction.get('end_index'))
+            key = (correction.get("start_index"), correction.get("end_index"))
             if key not in merged:
                 merged[key] = correction
 
         return list(merged.values())
 
-    def _apply_corrections(
-        self,
-        original_text: str,
-        corrections: List[Dict[str, Any]]
-    ) -> str:
+    def _apply_corrections(self, original_text: str, corrections: List[Dict[str, Any]]) -> str:
         """
         Apply corrections to text.
 
@@ -363,31 +336,63 @@ class Merger:
         Returns:
             Corrected text
         """
-        # TODO: Implement correction application
-        # Apply corrections from right to left to preserve positions
+        if not corrections:
+            return original_text
+
         corrected = original_text
 
-        # Sort corrections by position (reverse order)
         sorted_corrections = sorted(
-            corrections,
-            key=lambda x: x.get('start_index', 0),
-            reverse=True
+            [c for c in corrections if self._is_valid_correction(c)],
+            key=lambda x: (x.get("start_index", 0), x.get("end_index", 0)),
+            reverse=True,
         )
 
         for correction in sorted_corrections:
-            start = correction.get('start_index', 0)
-            end = correction.get('end_index', 0)
-            corrected_span = correction.get('corrected_span', '')
+            start = correction.get("start_index", 0)
+            end = correction.get("end_index", 0)
+            corrected_span = correction.get("corrected_span", "")
+            original_span = correction.get("original_span", "")
 
-            corrected = corrected[:start] + corrected_span + corrected[end:]
+            if start < 0 or end > len(corrected) or start >= end:
+                continue
+
+            if corrected_span and corrected_span != original_span:
+                corrected = corrected[:start] + corrected_span + corrected[end:]
 
         return corrected
+
+    def _is_valid_correction(self, correction: Dict[str, Any]) -> bool:
+        """
+        Check if a correction is valid.
+
+        Args:
+            correction: Correction to validate
+
+        Returns:
+            True if correction is valid
+        """
+        if not correction:
+            return False
+
+        start = correction.get("start_index", 0)
+        end = correction.get("end_index", 0)
+
+        if start < 0 or end <= 0:
+            return False
+
+        if start >= end:
+            return False
+
+        if not correction.get("corrected_span"):
+            return False
+
+        return True
 
     def _calculate_statistics(
         self,
         rule_errors: List[GrammarError],
         llm_result: LLMResult,
-        merged_errors: List[Dict[str, Any]]
+        merged_errors: List[Dict[str, Any]],
     ) -> Dict[str, Any]:
         """
         Calculate correction statistics.
@@ -402,19 +407,19 @@ class Merger:
         """
         # TODO: Implement statistics calculation
         return {
-            'total_errors': len(merged_errors),
-            'rule_engine_errors': len(rule_errors),
-            'llm_corrections': len(llm_result.corrections),
-            'overlaps_resolved': len([e for e in merged_errors if e.get('from_overlap')]),
-            'error_types': self._count_error_types(merged_errors),
-            'severity_distribution': self._count_severity(merged_errors)
+            "total_errors": len(merged_errors),
+            "rule_engine_errors": len(rule_errors),
+            "llm_corrections": len(llm_result.corrections),
+            "overlaps_resolved": len([e for e in merged_errors if e.get("from_overlap")]),
+            "error_types": self._count_error_types(merged_errors),
+            "severity_distribution": self._count_severity(merged_errors),
         }
 
     def _count_error_types(self, errors: List[Dict[str, Any]]) -> Dict[str, int]:
         """Count errors by type."""
         counts = {}
         for error in errors:
-            error_type = error.get('error_type', 'unknown')
+            error_type = error.get("error_type", "unknown")
             counts[error_type] = counts.get(error_type, 0) + 1
         return counts
 
@@ -422,7 +427,7 @@ class Merger:
         """Count errors by severity."""
         counts = {}
         for error in errors:
-            severity = error.get('severity', 'unknown')
+            severity = error.get("severity", "unknown")
             counts[severity] = counts.get(severity, 0) + 1
         return counts
 

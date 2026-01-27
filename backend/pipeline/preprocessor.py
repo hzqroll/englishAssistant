@@ -1,24 +1,26 @@
 """
 Text preprocessing module.
 
-This module handles the first stage of the text correction pipeline:
+This module handles first stage of text correction pipeline:
 sentence splitting, speaker detection, and Chinese character detection.
 """
 
 from dataclasses import dataclass
 from typing import List, Optional, Dict, Any
 import re
+import nltk
+from nltk.tokenize import sent_tokenize
 
 
 @dataclass
 class Message:
     """
-    Represents a single message or sentence in the text.
+    Represents a single message or sentence in text.
 
     Attributes:
         text: The message/sentence text
         speaker: Detected speaker (for dialogues) or None
-        has_chinese: Whether the message contains Chinese characters
+        has_chinese: Whether message contains Chinese characters
         start_index: Start position in original text
         end_index: End position in original text
         metadata: Additional metadata
@@ -66,10 +68,10 @@ class PreprocessedText:
 
 class Preprocessor:
     """
-    Text preprocessor for the analysis pipeline.
+    Text preprocessor for analysis pipeline.
 
     Handles sentence splitting, speaker detection, and Chinese
-    character detection as the first stage of the correction pipeline.
+    character detection as first stage of correction pipeline.
 
     Attributes:
         sentence_split_pattern: Regex pattern for splitting sentences
@@ -78,11 +80,15 @@ class Preprocessor:
     """
 
     def __init__(self):
-        """Initialize the preprocessor with default patterns."""
-        # TODO: Configure patterns based on technical specification
-        self.sentence_split_pattern = re.compile(r'[.!?]+\s+')
-        self.chinese_char_pattern = re.compile(r'[\u4e00-\u9fff]')
-        self.speaker_pattern = re.compile(r'^([A-Z][a-z]+):')
+        """Initialize preprocessor with default patterns."""
+        self.sentence_split_pattern = re.compile(r"[.!?]+\s+")
+        self.chinese_char_pattern = re.compile(r"[\u4e00-\u9fff]")
+        self.speaker_pattern = re.compile(r"^([A-Z][a-z]+):\s*")
+
+        try:
+            nltk.data.find("tokenizers/punkt")
+        except LookupError:
+            nltk.download("punkt")
 
     def preprocess(self, text: str) -> PreprocessedText:
         """
@@ -104,12 +110,6 @@ class Preprocessor:
             assert len(result.messages) == 2
             ```
         """
-        # TODO: Implement actual preprocessing logic
-        # 1. Split text into sentences/messages
-        # 2. Detect speakers for dialogue format
-        # 3. Detect Chinese characters
-        # 4. Calculate statistics
-
         messages = self._split_sentences(text)
         speakers = self._detect_speakers(messages)
         chinese_info = self._detect_chinese(text)
@@ -118,30 +118,41 @@ class Preprocessor:
         speaker_count = len(set(speakers)) if speakers else 0
 
         processed_messages = []
+        current_pos = 0
         for i, msg in enumerate(messages):
+            speaker = speakers[i] if i < len(speakers) else None
+            has_chinese = self._detect_chinese(msg)["has_chinese"]
+
+            msg_start = text.find(msg, current_pos)
+            msg_end = msg_start + len(msg)
+
             processed_messages.append(
                 Message(
                     text=msg,
-                    speaker=speakers[i] if i < len(speakers) else None,
-                    has_chinese=chinese_info['has_chinese'],
-                    start_index=0,  # TODO: Calculate actual positions
-                    end_index=len(msg),
-                    metadata={}
+                    speaker=speaker,
+                    has_chinese=has_chinese,
+                    start_index=msg_start,
+                    end_index=msg_end,
+                    metadata={},
                 )
             )
+            current_pos = msg_end
 
         return PreprocessedText(
             messages=processed_messages,
             original_text=text,
             is_dialogue=is_dialogue,
             speaker_count=speaker_count,
-            chinese_ratio=chinese_info['ratio'],
-            metadata={}
+            chinese_ratio=chinese_info["ratio"],
+            metadata={
+                "total_chinese_chars": len(chinese_info["chinese_chars"]),
+                "detected_speakers": list(set(speakers)) if speakers else [],
+            },
         )
 
     def _split_sentences(self, text: str) -> List[str]:
         """
-        Split text into sentences.
+        Split text into sentences using NLTK.
 
         Args:
             text: Input text
@@ -149,9 +160,7 @@ class Preprocessor:
         Returns:
             List of sentences
         """
-        # TODO: Implement proper sentence splitting
-        # Consider using NLTK or similar for better accuracy
-        sentences = self.sentence_split_pattern.split(text)
+        sentences = sent_tokenize(text)
         return [s.strip() for s in sentences if s.strip()]
 
     def _detect_speakers(self, sentences: List[str]) -> List[Optional[str]]:
@@ -164,7 +173,6 @@ class Preprocessor:
         Returns:
             List of speakers (None for non-dialogue)
         """
-        # TODO: Implement speaker detection logic
         speakers = []
         for sentence in sentences:
             match = self.speaker_pattern.match(sentence)
@@ -185,11 +193,7 @@ class Preprocessor:
         has_chinese = len(chinese_chars) > 0
         ratio = len(chinese_chars) / len(text) if text else 0.0
 
-        return {
-            'has_chinese': has_chinese,
-            'ratio': ratio,
-            'chinese_chars': chinese_chars
-        }
+        return {"has_chinese": has_chinese, "ratio": ratio, "chinese_chars": chinese_chars}
 
     def _is_dialogue(self, speakers: List[Optional[str]]) -> bool:
         """
@@ -201,7 +205,17 @@ class Preprocessor:
         Returns:
             True if dialogue format detected
         """
-        # TODO: Implement proper dialogue detection
-        # Consider multiple speakers, speaker patterns, etc.
         detected_speakers = [s for s in speakers if s is not None]
-        return len(detected_speakers) >= 2
+
+        if len(detected_speakers) == 0:
+            return False
+
+        if len(detected_speakers) < 2:
+            return False
+
+        unique_speakers = set(detected_speakers)
+        if len(unique_speakers) < 2:
+            return False
+
+        speaker_pattern_count = len(detected_speakers) / len(speakers)
+        return speaker_pattern_count >= 0.5
