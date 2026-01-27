@@ -78,7 +78,7 @@ class Settings(BaseSettings):
     CACHE_TTL: int = Field(default=86400, description="Cache TTL in seconds (24 hours)")
     CACHE_ENABLED: bool = Field(default=True, description="Enable caching")
 
-    # File Upload
+    # File Upload0009-
     MAX_TEXT_LENGTH: int = Field(default=50000, description="Maximum text length in characters")
     MAX_FILE_SIZE: int = Field(default=10485760, description="Maximum file size in bytes (10MB)")
 
