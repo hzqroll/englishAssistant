@@ -1,49 +1,46 @@
 """
 Cache service.
 
-Handles Redis-based caching for frequently accessed data.
+Handles in-memory caching for MVP version (no Redis required).
 """
 
 from typing import Optional, Any, Dict, List
 import json
+import hashlib
+from datetime import datetime, timedelta
 
 
 class CacheService:
     """
-    Redis-based cache service.
+    In-memory cache service (MVP version).
 
-    Provides caching for frequently accessed data to improve performance.
+    Provides simple caching without Redis dependency.
+    Suitable for V1 deployment and development.
 
     Attributes:
-        redis_client: Redis client instance
+        cache: In-memory cache dictionary
         default_ttl: Default time-to-live in seconds
-        prefix: Key prefix for all cache entries
+        max_size: Maximum number of cache entries
     """
 
-    def __init__(
-        self,
-        redis_url: str = "redis://localhost:6379/0",
-        default_ttl: int = 3600,
-        prefix: str = "english_assistant:"
-    ):
+    def __init__(self, default_ttl: int = 3600, max_size: int = 1000):
         """
-        Initialize the cache service.
+        Initialize cache service.
 
         Args:
-            redis_url: Redis connection URL
             default_ttl: Default TTL in seconds
-            prefix: Key prefix
+            max_size: Maximum number of cache entries
         """
-        # TODO: Initialize Redis client
+        self.cache: Dict[str, Dict[str, Any]] = {}
         self.default_ttl = default_ttl
-        self.prefix = prefix
+        self.max_size = max_size
 
-    async def get(self, key: str) -> Optional[Any]:
+    def get(self, key: str) -> Optional[Any]:
         """
         Get value from cache.
 
         Args:
-            key: Cache key (without prefix)
+            key: Cache key
 
         Returns:
             Cached value or None
@@ -54,29 +51,23 @@ class CacheService:
             value = await service.get("user:123")
             ```
         """
-        # TODO: Implement cache retrieval
-        # 1. Add prefix to key
-        # 2. Get from Redis
-        # 3. Deserialize JSON
-        # 4. Return value
+        if key not in self.cache:
+            return None
 
-        full_key = f"{self.prefix}{key}"
+        entry = self.cache[key]
 
-        # Placeholder: Simulate cache get
-        # In production, this would query Redis
-        return None
+        if datetime.utcnow() > entry["expires"]:
+            del self.cache[key]
+            return None
 
-    async def set(
-        self,
-        key: str,
-        value: Any,
-        ttl: Optional[int] = None
-    ) -> bool:
+        return entry["value"]
+
+    def set(self, key: str, value: Any, ttl: Optional[int] = None) -> bool:
         """
         Set value in cache.
 
         Args:
-            key: Cache key (without prefix)
+            key: Cache key
             value: Value to cache (will be JSON serialized)
             ttl: Time-to-live in seconds (uses default if not specified)
 
@@ -88,25 +79,21 @@ class CacheService:
             await service.set("user:123", {"name": "John"}, ttl=60)
             ```
         """
-        # TODO: Implement cache set
-        # 1. Serialize value to JSON
-        # 2. Add prefix to key
-        # 3. Set in Redis with TTL
-        # 4. Return success status
+        if len(self.cache) >= self.max_size:
+            self._evict_expired()
 
-        full_key = f"{self.prefix}{key}"
-        ttl = ttl or self.default_ttl
+        expires = datetime.utcnow() + timedelta(seconds=ttl or self.default_ttl)
 
-        # Placeholder: Simulate cache set
-        # In production, this would set value in Redis
+        self.cache[key] = {"value": value, "created": datetime.utcnow(), "expires": expires}
+
         return True
 
-    async def delete(self, key: str) -> bool:
+    def delete(self, key: str) -> bool:
         """
         Delete value from cache.
 
         Args:
-            key: Cache key (without prefix)
+            key: Cache key
 
         Returns:
             True if deleted, False otherwise
@@ -116,33 +103,33 @@ class CacheService:
             await service.delete("user:123")
             ```
         """
-        # TODO: Implement cache deletion
-        full_key = f"{self.prefix}{key}"
+        if key in self.cache:
+            del self.cache[key]
+            return True
+        return False
 
-        # Placeholder: Simulate cache delete
-        # In production, this would delete from Redis
-        return True
-
-    async def delete_pattern(self, pattern: str) -> int:
+    def exists(self, key: str) -> bool:
         """
-        Delete all keys matching pattern.
+        Check if key exists in cache.
 
         Args:
-            pattern: Key pattern (without prefix)
+            key: Cache key
 
         Returns:
-            Number of keys deleted
-
-        Example:
-            ```python
-            count = await service.delete_pattern("user:*")
-            ```
+            True if key exists, False otherwise
         """
-        # TODO: Implement pattern-based deletion
-        # Use SCAN to avoid blocking
-        return 0
+        if key not in self.cache:
+            return False
 
-    async def get_many(self, keys: List[str]) -> Dict[str, Any]:
+        entry = self.cache[key]
+
+        if datetime.utcnow() > entry["expires"]:
+            del self.cache[key]
+            return False
+
+        return True
+
+    def get_many(self, keys: List[str]) -> Dict[str, Any]:
         """
         Get multiple values from cache.
 
@@ -157,19 +144,14 @@ class CacheService:
             values = await service.get_many(["user:123", "user:456"])
             ```
         """
-        # TODO: Implement batch retrieval
         result = {}
         for key in keys:
-            value = await self.get(key)
+            value = self.get(key)
             if value is not None:
                 result[key] = value
         return result
 
-    async def set_many(
-        self,
-        mapping: Dict[str, Any],
-        ttl: Optional[int] = None
-    ) -> bool:
+    def set_many(self, mapping: Dict[str, Any], ttl: Optional[int] = None) -> bool:
         """
         Set multiple values in cache.
 
@@ -185,102 +167,93 @@ class CacheService:
             await service.set_many({"user:123": data1, "user:456": data2})
             ```
         """
-        # TODO: Implement batch set
         for key, value in mapping.items():
-            await self.set(key, value, ttl)
+            self.set(key, value, ttl)
         return True
 
-    async def exists(self, key: str) -> bool:
+    def clear(self) -> bool:
         """
-        Check if key exists in cache.
+        Clear all cached data.
 
-        Args:
-            key: Cache key
-
-        Returns:
-            True if key exists, False otherwise
-        """
-        # TODO: Implement key existence check
-        value = await self.get(key)
-        return value is not None
-
-    async def increment(self, key: str, amount: int = 1) -> int:
-        """
-        Increment counter value.
-
-        Args:
-            key: Cache key
-            amount: Amount to increment
-
-        Returns:
-            New value
-
-        Example:
-            ```python
-            count = await service.increment("api_calls:user:123")
-            ```
-        """
-        # TODO: Implement atomic increment
-        current = await self.get(key)
-        if current is None:
-            new_value = amount
-        else:
-            new_value = current + amount
-
-        await self.set(key, new_value)
-        return new_value
-
-    async def expire(self, key: str, ttl: int) -> bool:
-        """
-        Set expiration time for existing key.
-
-        Args:
-            key: Cache key
-            ttl: Time-to-live in seconds
-
-        Returns:
-            True if successful, False otherwise
-        """
-        # TODO: Implement expiration update
-        # In production, use Redis EXPIRE command
-        return True
-
-    async def clear_all(self) -> bool:
-        """
-        Clear all cached data with the service prefix.
-
-        WARNING: Use with caution in production.
+        WARNING: Use with caution.
 
         Returns:
             True if successful
         """
-        # TODO: Implement clear all
-        # Delete all keys with the service prefix
-        return await self.delete_pattern("*")
+        self.cache.clear()
+        return True
 
-    def _serialize(self, value: Any) -> str:
+    def clear_expired(self) -> int:
         """
-        Serialize value to JSON.
-
-        Args:
-            value: Value to serialize
+        Clear only expired entries from cache.
 
         Returns:
-            JSON string
+            Number of entries cleared
         """
-        return json.dumps(value)
+        expired_keys = []
 
-    def _deserialize(self, data: str) -> Any:
+        for key, entry in self.cache.items():
+            if datetime.utcnow() > entry["expires"]:
+                expired_keys.append(key)
+
+        for key in expired_keys:
+            del self.cache[key]
+
+        return len(expired_keys)
+
+    def get_stats(self) -> Dict[str, Any]:
         """
-        Deserialize JSON string.
-
-        Args:
-            data: JSON string
+        Get cache statistics.
 
         Returns:
-            Deserialized value
+            Dictionary with cache statistics
         """
-        return json.loads(data)
+        now = datetime.utcnow()
+
+        active_count = sum(1 for entry in self.cache.values() if now <= entry["expires"])
+
+        expired_count = len(self.cache) - active_count
+
+        return {
+            "total_entries": len(self.cache),
+            "active_entries": active_count,
+            "expired_entries": expired_count,
+            "max_size": self.max_size,
+            "default_ttl": self.default_ttl,
+        }
+
+    def _evict_expired(self) -> int:
+        """
+        Remove expired entries to free space.
+
+        Returns:
+            Number of entries evicted
+        """
+        evicted = 0
+        now = datetime.utcnow()
+
+        keys_to_remove = []
+
+        for key, entry in self.cache.items():
+            if now > entry["expires"]:
+                keys_to_remove.append(key)
+                evicted += 1
+
+        for key in keys_to_remove:
+            del self.cache[key]
+
+        if evicted > 0:
+            keys_to_remove = []
+            now = datetime.utcnow()
+
+            for key, entry in self.cache.items():
+                if now > entry["expires"]:
+                    keys_to_remove.append(key)
+
+            for key in keys_to_remove:
+                del self.cache[key]
+
+        return evicted
 
 
 class CacheServiceError(Exception):

@@ -10,8 +10,9 @@ import time
 
 from .preprocessor import Preprocessor, PreprocessedText
 from .rule_engine import RuleEngine, GrammarError
-from .llm_engine import LLMEngine, LLMResult, LLMError
+from .llm_engine import LLMEngine, LLMResult, LLMError, Intent, TextType, Tone
 from .merger import Merger, MergedResult
+from core.config import settings
 
 
 @dataclass
@@ -111,10 +112,17 @@ class AnalysisPipeline:
         """
         self.preprocessor = preprocessor or Preprocessor()
         self.rule_engine = rule_engine or RuleEngine()
-        self.llm_engine = llm_engine or LLMEngine()
+
+        # Initialize LLM engine with API key from settings
+        if llm_engine is None:
+            api_key = settings.ZHIPUAI_API_KEY if settings.ZHIPUAI_API_KEY else None
+            self.llm_engine = LLMEngine(api_key=api_key) if api_key else None
+        else:
+            self.llm_engine = llm_engine
+
         self.merger = merger or Merger()
         self.enable_caching = enable_caching
-        self.enable_llm = enable_llm
+        self.enable_llm = enable_llm and bool(self.llm_engine)
 
     def analyze(
         self, text: str, mode: str = "accuracy", user_id: Optional[str] = None
@@ -167,10 +175,18 @@ class AnalysisPipeline:
                     # Graceful degradation: continue with rule-based results
                     stage_times["llm"] = int((time.time() - stage_start) * 1000)
                     stage_times["llm_error"] = str(e)
+                    # Create default intent for rule-only results
+                    default_intent = Intent(
+                        text_type=TextType.DIALOGUE if preprocessed.is_dialogue else TextType.UNKNOWN,
+                        tone=Tone.NEUTRAL,
+                        speakers=[],
+                        has_chinese=preprocessed.chinese_ratio > 0,
+                        confidence=0.5
+                    )
                     # Create empty LLM result
                     llm_result = LLMResult(
                         optimized_text=text,
-                        detected_intent=preprocessed.metadata.get("intent"),
+                        detected_intent=default_intent,
                         corrections=[],
                         explanation="LLM optimization failed, using rule-based results only",
                         token_usage={},

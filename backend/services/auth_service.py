@@ -9,7 +9,9 @@ from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 
 from models import User
-from core.security import create_access_token, verify_token, hash_password, verify_password
+from models.user import UserSettings
+from core.security import create_access_token, create_refresh_token, verify_token
+from core.config import settings
 from schemas.auth import LoginRequest, RegisterRequest, AuthResponse
 
 
@@ -17,33 +19,23 @@ class AuthService:
     """
     Authentication service for user login, registration, and token management.
 
-    Attributes:
-        secret_key: JWT secret key
-        algorithm: JWT algorithm
-        access_token_expire_minutes: Access token expiration time
-        refresh_token_expire_days: Refresh token expiration time
+    Uses settings from core.config for JWT configuration.
     """
 
-    def __init__(
-        self,
-        secret_key: str,
-        algorithm: str = "HS256",
-        access_token_expire_minutes: int = 30,
-        refresh_token_expire_days: int = 7
-    ):
+    def __init__(self):
         """
         Initialize the authentication service.
 
-        Args:
-            secret_key: JWT secret key
-            algorithm: JWT algorithm (default: HS256)
-            access_token_expire_minutes: Access token expiration in minutes
-            refresh_token_expire_days: Refresh token expiration in days
+        Uses settings from core.config:
+        - JWT_SECRET_KEY
+        - JWT_ALGORITHM
+        - ACCESS_TOKEN_EXPIRE_MINUTES
+        - REFRESH_TOKEN_EXPIRE_DAYS
         """
-        self.secret_key = secret_key
-        self.algorithm = algorithm
-        self.access_token_expire_minutes = access_token_expire_minutes
-        self.refresh_token_expire_days = refresh_token_expire_days
+        self.secret_key = settings.JWT_SECRET_KEY
+        self.algorithm = settings.JWT_ALGORITHM
+        self.access_token_expire_minutes = settings.ACCESS_TOKEN_EXPIRE_MINUTES
+        self.refresh_token_expire_days = settings.REFRESH_TOKEN_EXPIRE_DAYS
 
     def register(self, data: RegisterRequest, db: Session) -> AuthResponse:
         """
@@ -58,7 +50,7 @@ class AuthService:
 
         Example:
             ```python
-            service = AuthService(secret_key="secret")
+            service = AuthService()
             request = RegisterRequest(email="user@example.com", password="pass123")
             response = service.register(request, db)
             assert response.access_token
@@ -67,31 +59,33 @@ class AuthService:
         Raises:
             AuthServiceError: If registration fails
         """
-        # TODO: Implement registration logic
-        # 1. Check if email already exists
-        # 2. Hash password
-        # 3. Create user record
-        # 4. Create user settings
-        # 5. Generate tokens
-        # 6. Return response
-
         # Check if user exists
         existing_user = db.query(User).filter(User.email == data.email).first()
         if existing_user:
             raise AuthServiceError("Email already registered")
 
-        # Hash password
+        # Hash password using security module
+        from core.security import hash_password
         password_hash = hash_password(data.password)
 
         # Create user
         user = User(
             email=data.email,
             password_hash=password_hash,
-            tier="free",
+            tier=data.tier or "free",
             is_active=True,
             is_verified=False
         )
         db.add(user)
+        db.flush()  # Flush to get user.id
+
+        # Create user settings
+        user_settings = UserSettings(
+            user_id=user.id,
+            default_mode=data.default_mode or "accuracy"
+        )
+        db.add(user_settings)
+
         db.commit()
         db.refresh(user)
 
@@ -122,19 +116,13 @@ class AuthService:
         Raises:
             AuthServiceError: If authentication fails
         """
-        # TODO: Implement login logic
-        # 1. Find user by email
-        # 2. Verify password
-        # 3. Update last_login_at
-        # 4. Generate tokens
-        # 5. Return response
-
         # Find user
         user = db.query(User).filter(User.email == data.email).first()
         if not user:
             raise AuthServiceError("Invalid credentials")
 
         # Verify password
+        from core.security import verify_password
         if not verify_password(data.password, user.password_hash):
             raise AuthServiceError("Invalid credentials")
 
@@ -173,14 +161,8 @@ class AuthService:
         Raises:
             AuthServiceError: If refresh fails
         """
-        # TODO: Implement token refresh logic
-        # 1. Verify refresh token
-        # 2. Check if user exists and is active
-        # 3. Generate new access token
-        # 4. Return response
-
-        payload = verify_token(refresh_token, self.secret_key)
-        if not payload or payload.get('type') != 'refresh':
+        payload = verify_token(refresh_token)
+        if not payload:
             raise AuthServiceError("Invalid refresh token")
 
         user_id = payload.get('sub')
@@ -219,8 +201,7 @@ class AuthService:
                 user_id = payload.get('sub')
             ```
         """
-        # TODO: Implement token verification
-        return verify_token(token, self.secret_key)
+        return verify_token(token)
 
     def _generate_tokens(self, user_id: str) -> Dict[str, str]:
         """
@@ -233,21 +214,14 @@ class AuthService:
             Dictionary with access_token and refresh_token
         """
         # Access token
-        access_expire = datetime.utcnow() + timedelta(minutes=self.access_token_expire_minutes)
         access_token = create_access_token(
             data={"sub": user_id, "type": "access"},
-            secret=self.secret_key,
-            algorithm=self.algorithm,
-            expires_delta=access_expire
+            expires_delta=timedelta(minutes=self.access_token_expire_minutes)
         )
 
         # Refresh token
-        refresh_expire = datetime.utcnow() + timedelta(days=self.refresh_token_expire_days)
-        refresh_token = create_access_token(
-            data={"sub": user_id, "type": "refresh"},
-            secret=self.secret_key,
-            algorithm=self.algorithm,
-            expires_delta=refresh_expire
+        refresh_token = create_refresh_token(
+            data={"sub": user_id, "type": "refresh"}
         )
 
         return {

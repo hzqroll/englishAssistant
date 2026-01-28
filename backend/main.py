@@ -67,11 +67,13 @@ async def root():
 
 
 # Include API routers
+from api.v1 import auth, analysis, history
+app.include_router(auth.router, prefix="/api/v1/auth", tags=["auth"])
+app.include_router(analysis.router, prefix="/api/v1", tags=["analysis"])
+app.include_router(history.router, prefix="/api/v1", tags=["history"])
+
 # TODO: Uncomment when routers are implemented
-# from api.v1 import auth, analysis, history, statistics, export, settings
-# app.include_router(auth.router, prefix="/api/v1/auth", tags=["auth"])
-# app.include_router(analysis.router, prefix="/api/v1", tags=["analysis"])
-# app.include_router(history.router, prefix="/api/v1/history", tags=["history"])
+# from api.v1 import statistics, export, settings
 # app.include_router(statistics.router, prefix="/api/v1/statistics", tags=["statistics"])
 # app.include_router(export.router, prefix="/api/v1/export", tags=["export"])
 # app.include_router(settings.router, prefix="/api/v1/settings", tags=["settings"])

@@ -4,7 +4,7 @@ User-related database models.
 This module contains SQLAlchemy models for users, user settings, and API credits.
 """
 
-from sqlalchemy import Column, String, Boolean, ForeignKey, Index, Float, Integer
+from sqlalchemy import Column, String, Boolean, ForeignKey, Index, Float, Integer, DateTime
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship, validates
 from datetime import datetime
@@ -246,8 +246,8 @@ class APICredit(Base):
     period_start = Column(DateTime, nullable=False)
     period_end = Column(DateTime, nullable=False)
 
-    # Additional metadata
-    metadata = Column(JSONB, default=dict)
+    # Additional metadata (renamed from 'metadata' to avoid SQLAlchemy reserved word)
+    meta_data = Column(JSONB, default=dict)
 
     # Relationship
     user = relationship("User", back_populates="api_credits")

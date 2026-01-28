@@ -198,8 +198,8 @@ start_docker_services() {
 
     cd "$PROJECT_ROOT"
 
-    print_info "Starting PostgreSQL and Redis containers..."
-    docker-compose up -d postgres redis
+    print_info "Starting PostgreSQL container..."
+    docker-compose up -d postgres
 
     print_info "Waiting for containers to be healthy..."
 
@@ -215,17 +215,6 @@ start_docker_services() {
     done
     echo
 
-    # Wait for Redis
-    print_info "Waiting for Redis..."
-    for i in {1..30}; do
-        if docker exec english-assistant-redis redis-cli ping &> /dev/null; then
-            print_success "Redis is ready"
-            break
-        fi
-        echo -n "."
-        sleep 2
-    done
-    echo
 }
 
 start_backend() {
@@ -318,7 +307,6 @@ display_info() {
 
     echo -e "${GREEN}Databases:${NC}"
     echo -e "  PostgreSQL: ${BLUE}localhost:5432${NC}"
-    echo -e "  Redis:      ${BLUE}localhost:6379${NC}"
     echo ""
 
     echo -e "${GREEN}Quick Test Commands:${NC}"

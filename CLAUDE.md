@@ -7,14 +7,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 **English Transfer Assistant** is an AI-powered English text correction and analysis tool designed for English learners. The project helps users improve their English writing through intelligent error detection, correction, and structured explanations.
 
 ### Current Status
-- **Phase**: Implementation (Phase 3) - Framework Complete (10%)
+- **Phase**: Implementation (Phase 3) - Pipeline Implementation (30%)
 - **Framework**: ✅ Complete (backend + frontend + Docker + dev tools)
-- **Implementation**: ⏳ In Progress (skeleton code created, business logic pending)
+- **Pipeline**: 🔄 In Progress (frontend components implemented, backend services in progress)
 - **Documentation**: Complete (see `/docs` directory)
 
-### Latest Commit
-- `c3201f1` - feat: 搭建项目代码框架 (126 files, 18,241 lines added)
-- Branch: `feature/202601_gemini`
+### Latest Commits
+- `30aaca5` - feat(frontend): 实现前端组件重构和错误高亮功能
+- `b68da84` - feat(project): 更新项目状态为实施阶段并完善技术栈文档
+- Branch: `feature/mvp_v1`
 
 ### Tech Stack
 
@@ -43,6 +44,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Docker + Docker Compose
 - Poetry (Python deps)
 - NPM (frontend deps)
+- In-memory caching (V1 MVP - Redis removed for simplicity)
 
 ## Core Architecture
 
@@ -73,7 +75,7 @@ The text correction system uses a **4-stage pipeline** orchestrated by `Analysis
 
 **Main Controller**: `AnalysisPipeline.analyze(text, mode)` -> `PipelineResult`
 - Each stage is timed independently
-- Supports caching (Redis)
+- Supports in-memory caching (CacheService) for V1 MVP
 - Graceful degradation if LLM fails
 
 ### Database Schema
@@ -193,7 +195,7 @@ npm run lint
 ### Docker
 
 ```bash
-# Start PostgreSQL and Redis
+# Start PostgreSQL (Redis removed for V1 MVP)
 docker-compose up -d
 
 # View logs
@@ -229,9 +231,14 @@ docker-compose restart postgres
 - LanguageTool fails → try LLM-only
 - Always return partial results, never complete failures
 
+### V1 MVP Simplifications
+- **In-memory caching** - Redis removed for V1 (see `CacheService`)
+- **Focus on batch processing** - Real-time mode planned for V2.0
+- **Single-instance deployment** - No distributed architecture needed
+
 ### Known Issues
 - **tiktoken package disabled** - Python 3.14 incompatibility (requires 3.11-3.13)
-- Tests currently fail - skeleton code missing imports (will be fixed during implementation)
+- Some skeleton code still needs imports and business logic implementation
 
 ## API Structure
 
@@ -280,7 +287,7 @@ docker-compose restart postgres
 - **SDK**: `zhipuai` Python package
 - **Model**: GLM-4-Flash (10x cheaper than standard)
 - **Usage**: Intent detection, naturalness optimization, Chinese-English correction
-- **Optimization**: Batch processing (10 sentences/call), 24-hour caching
+- **Optimization**: Batch processing (10 sentences/call), 24-hour caching (in-memory for V1)
 - **Fallback**: Graceful degradation to LanguageTool-only
 
 ### LanguageTool
@@ -288,18 +295,45 @@ docker-compose restart postgres
 - **Usage**: Grammar, spelling, tense, style checking
 - **Mapping**: Categories → UI error types (grammar, tense, word_choice, etc.)
 
+## Code Style and Development Standards
+
+This project has strict code style standards. See `AGENTS.md` for comprehensive guidelines.
+
+**Backend Standards:**
+- Type hints required on ALL functions (enforced by mypy)
+- Line length: 100 characters (Black config)
+- Import order: stdlib → third-party → local (isort-style via ruff)
+- Use `Optional[T]` instead of `T | None` for consistency
+- Use Google-style docstrings with Args/Returns/Raises
+- Database models use singular nouns (e.g., `User`, not `Users`)
+- Always use soft deletes via `SoftDeleteMixin`
+
+**Frontend Standards:**
+- Use `<script setup lang="ts">` in single-file components
+- Absolute imports with `@/` alias (configured in vite.config.ts)
+- Keep components under 300 lines (split if larger)
+- Use Composition API style for Pinia stores
+- Define types in `src/stores/types.ts` or component-level
+
+**Testing Standards:**
+- Use fixtures from `tests/conftest.py`
+- Mark tests: `@pytest.mark.unit`, `@pytest.mark.integration`
+- Test database uses in-memory SQLite (not PostgreSQL)
+- Follow AAA pattern (Arrange, Act, Assert)
+- Descriptive test names: `test_login_with_valid_credentials_succeeds`
+
 ## Next Implementation Steps
 
 ### Immediate (Current Focus)
-1. **Fix skeleton imports** - Add missing imports to backend models (DateTime, etc.)
-2. **Database setup** - Configure Alembic, create initial migrations
-3. **Authentication** - Implement JWT generation/validation, password hashing
-4. **Pipeline implementation** - Connect LanguageTool and Zhipu AI
+1. **Complete backend services** - Finish service implementations (cache, rate_limit, auth)
+2. **API endpoints** - Implement analyze, history, auth endpoints
+3. **Database setup** - Configure Alembic, create initial migrations
+4. **Frontend-backend integration** - Connect stores to backend API
 
 ### Short-term
-5. **API endpoints** - Implement analyze, history, auth endpoints
-6. **Frontend integration** - Connect stores to backend API
-7. **Error handling** - Complete error handling in all services
+5. **Error handling** - Complete error handling in all services
+6. **Authentication flow** - Implement JWT generation/validation end-to-end
+7. **Pipeline integration** - Connect LanguageTool and Zhipu AI with proper error handling
 8. **Testing** - Write comprehensive unit and integration tests
 
 See `/docs/05-tasks/implementation-checklist.md` for full task list.
@@ -310,17 +344,22 @@ See `/docs/05-tasks/implementation-checklist.md` for full task list.
 - 126 files created (18,241 lines)
 - Backend: 50+ Python files with complete module structure
 - Frontend: 40+ Vue/TS files with all components
-- Docker: PostgreSQL 16 + Redis 7 configured
+- Docker: PostgreSQL 16 configured (Redis removed for V1 MVP)
 - Scripts: dev.sh, verify.sh, test.sh all working
 
-**Next Milestone**: Database & Authentication
-- Configure Alembic migrations
-- Implement JWT authentication
-- Fix skeleton code imports
+**Pipeline Implementation**: 🔄 In Progress
+- Frontend: Error highlighting, comparison view, input panels implemented
+- Backend: Pipeline stages implemented but need integration testing
+- Services: Cache and rate limit services refactored for in-memory V1
+
+**Next Milestone**: API Integration & Testing
+- Complete backend service implementations
+- Implement authentication endpoints
+- Frontend-backend integration
 - Get tests passing
 
-**Branch**: `feature/202601_gemini` (commit: `c3201f1`)
-**Ready to Push**: Yes - all framework code committed
+**Branch**: `feature/mvp_v1` (commit: `30aaca5`)
+**Development Guide**: See `AGENTS.md` for detailed coding standards
 
 ---
 
@@ -341,3 +380,8 @@ See `/docs/05-tasks/implementation-checklist.md` for full task list.
 - Backend API: http://localhost:8000
 - API Docs: http://localhost:8000/docs
 - Health Check: http://localhost:8000/health
+- PostgreSQL: localhost:5432
+
+**Additional Documentation**:
+- `AGENTS.md` - Comprehensive development guide and coding standards
+- `scripts/README.md` - Detailed script usage and troubleshooting

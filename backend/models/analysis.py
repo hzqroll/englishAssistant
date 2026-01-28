@@ -5,8 +5,8 @@ This module contains SQLAlchemy models for text analyses, error details,
 tags, and caching.
 """
 
-from sqlalchemy import Column, String, Text, Integer, ForeignKey, JSONB, Index, Boolean
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy import Column, String, Text, Integer, ForeignKey, JSON, Index, Boolean, DateTime
+from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship, validates
 from datetime import datetime
 import uuid

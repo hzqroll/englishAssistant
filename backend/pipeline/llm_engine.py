@@ -163,7 +163,7 @@ class LLMEngine:
 
         Args:
             model: Model name
-            api_key: Zhipu AI API key (None to use env variable)
+            api_key: Zhipu AI API key (None to disable LLM features)
             temperature: Sampling temperature (0-1)
             max_tokens: Maximum response tokens
             timeout: Request timeout
@@ -172,14 +172,14 @@ class LLMEngine:
         self.temperature = temperature
         self.max_tokens = max_tokens
         self.timeout = timeout
+        self.client = None
+        self.enabled = bool(api_key)
 
-        if not api_key:
-            raise LLMError("API key is required for LLMEngine")
-
-        try:
-            self.client = ZhipuAI(api_key=api_key)
-        except Exception as e:
-            raise LLMError(f"Failed to initialize Zhipu AI client: {str(e)}")
+        if api_key:
+            try:
+                self.client = ZhipuAI(api_key=api_key)
+            except Exception as e:
+                raise LLMError(f"Failed to initialize Zhipu AI client: {str(e)}")
 
     def optimize(
         self, text: str, mode: str = "accuracy", intent: Optional[Intent] = None
@@ -203,8 +203,11 @@ class LLMEngine:
             ```
 
         Raises:
-            LLMError: If optimization fails
+            LLMError: If optimization fails or LLM is not configured
         """
+        if not self.enabled:
+            raise LLMError("LLM engine is not enabled (no API key configured)")
+
         start_time = time.time()
 
         try:

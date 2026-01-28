@@ -5,33 +5,38 @@ Handles text analysis and correction endpoints.
 """
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 
 from models import get_db, User
 from schemas.analysis import AnalyzeRequest, AnalyzeResponse
-from services import AnalysisService
-from services.rate_limit_service import QuotaExceededError
+from services.analysis_service import AnalysisService, AnalysisServiceError
+from services.rate_limit_service import RateLimitService, QuotaExceededError
+from core.security import get_optional_user
 
 router = APIRouter()
-security = HTTPBearer()
 
-# TODO: Initialize analysis service
-analysis_service = AnalysisService()
+# Lazy load services to avoid import-time issues with zhipuai on Python 3.14
+def get_analysis_service() -> AnalysisService:
+    """Get or create the analysis service instance."""
+    return AnalysisService()
+
+def get_rate_limit_service() -> RateLimitService:
+    """Get or create the rate limit service instance."""
+    return RateLimitService()
 
 
 @router.post("/analyze", response_model=AnalyzeResponse)
 async def analyze_text(
     request: AnalyzeRequest,
-    credentials: HTTPAuthorizationCredentials = Depends(security),
+    user: User | None = Depends(get_optional_user),
     db: Session = Depends(get_db)
-):
+) -> AnalyzeResponse:
     """
     Analyze and correct English text.
 
     Args:
         request: Analysis request with text and mode
-        credentials: HTTP Bearer credentials (optional for anonymous)
+        user: User object (None for anonymous users)
         db: Database session
 
     Returns:
@@ -42,58 +47,23 @@ async def analyze_text(
         429: If rate limit exceeded
         500: If analysis fails
     """
-    # TODO: Implement text analysis endpoint
-    # 1. Verify authentication (optional for anonymous users)
-    # 2. Check rate limits
-    # 3. Run analysis pipeline
-    # 4. Save results to database
-    # 5. Return corrected text and errors
-
     try:
-        # Get user from token (if provided)
-        token = credentials.credentials if credentials else None
-        user = None
-
-        if token:
-            # TODO: Verify token and get user
-            pass
+        # TODO: Check rate limits
+        # For now, skip rate limiting to test core functionality
 
         # Perform analysis
-        response = analysis_service.analyze(request, user, db)
+        service = get_analysis_service()
+        response = service.analyze(request, user, db)
         return response
 
-    except QuotaExceededError as e:
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail=str(e)
-        )
-    except AnalysisService.analysis_service.AnalysisServiceError as e:
+    except AnalysisServiceError as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e)
         )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Analysis failed: {str(e)}"
+        )
 
-
-@router.get("/analyze/{analysis_id}")
-async def get_analysis(
-    analysis_id: str,
-    credentials: HTTPAuthorizationCredentials = Depends(security),
-    db: Session = Depends(get_db)
-):
-    """
-    Get specific analysis details by ID.
-
-    Args:
-        analysis_id: Analysis ID
-        credentials: HTTP Bearer credentials
-        db: Database session
-
-    Returns:
-        Analysis details
-
-    Raises:
-        404: If analysis not found
-        403: If user doesn't own the analysis
-    """
-    # TODO: Implement get analysis endpoint
-    pass

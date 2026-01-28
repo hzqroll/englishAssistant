@@ -92,7 +92,7 @@ class AnalysisService:
             original_text=request.text,
             corrected_text=pipeline_result.corrected_text,
             mode=request.mode,
-            text_type=pipeline_result.preprocessed.text_type or "unknown",
+            text_type="dialogue" if pipeline_result.preprocessed.is_dialogue else "unknown",
             statistics=pipeline_result.merged_result.statistics,
             processing_time_ms=pipeline_result.processing_time_ms,
             is_cached=False,
@@ -323,14 +323,23 @@ class AnalysisService:
             result: Result to cache
             db: Database session
         """
-        # TODO: Implement cache saving
         from datetime import timedelta
+        import json
+
+        # Convert datetime objects to ISO strings for JSON serialization
+        def serialize_datetime(obj):
+            if isinstance(obj, datetime):
+                return obj.isoformat()
+            raise TypeError(f"Type {type(obj)} not serializable")
+
+        # Serialize result to JSON with datetime handling
+        json_result = json.loads(json.dumps(result, default=serialize_datetime))
 
         expires_at = datetime.utcnow() + timedelta(hours=self.cache_ttl_hours)
 
         cache_entry = AnalysisCache(
             content_hash=cache_key,
-            cached_result=result,
+            cached_result=json_result,
             expires_at=expires_at
         )
         db.merge(cache_entry)

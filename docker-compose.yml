@@ -20,26 +20,28 @@ services:
     networks:
       - english-assistant-network
 
-  redis:
-    image: redis:7-alpine
-    container_name: english-assistant-redis
-    ports:
-      - "6379:6379"
-    volumes:
-      - redis_data:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    networks:
-      - english-assistant-network
+# Redis service removed for V1 MVP - using in-memory cache instead
+# If you need Redis for production, uncomment the following:
+#  redis:
+#   image: redis:7-alpine
+#   container_name: english-assistant-redis
+#   ports:
+#     - "6379:6379"
+#   volumes:
+#     - redis_data:/data
+#   healthcheck:
+#     test: ["CMD", "redis-cli", "ping"]
+#     interval: 10s
+#     timeout: 5s
+#     retries: 5
+#   networks:
+#     - english-assistant-network
 
 volumes:
   postgres_data:
     driver: local
-  redis_data:
-    driver: local
+# redis_data:
+#   driver: local
 
 networks:
   english-assistant-network:
