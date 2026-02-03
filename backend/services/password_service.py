@@ -4,7 +4,7 @@ Password service.
 Handles password hashing and verification.
 """
 
-from typing import Optional
+from typing import Optional, Dict, Any
 import bcrypt
 
 

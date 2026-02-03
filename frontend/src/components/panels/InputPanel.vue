@@ -12,207 +12,159 @@ const maxLength = 5000
 const minLength = 10
 
 const charCount = computed(() => text.value.length)
-const wordCount = computed(() => {
-  return text.value.trim() ? text.value.trim().split(/\s+/).length : 0
-})
 const remainingChars = computed(() => maxLength - text.value.length)
-const isTooLong = computed(() => text.value.length > maxLength)
-const isTooShort = computed(() => text.value.trim().length > 0 && text.value.trim().length < minLength)
 const canAnalyze = computed(() => {
   return !isAnalyzing.value &&
          text.value.trim().length >= minLength &&
-         text.value.length <= maxLength &&
-         !isTooLong.value
+         text.value.length <= maxLength
 })
 
-const progressPercentage = computed(() => progress.value)
+const modeDescriptions = {
+  accuracy: '纠正语法错误，保留原本风格',
+  natural: '改写成地道表达，可能调整结构'
+}
 
 watch(text, (newValue) => {
   if (newValue.length > maxLength) {
     text.value = newValue.slice(0, maxLength)
-    showToast('Text exceeds maximum length of 5000 characters', 'warning')
+    showToast('文本超出 5000 字符限制，请分段处理', 'warning')
   }
 })
 
 async function handleAnalyze() {
   if (!text.value.trim()) {
-    showError('Please enter some text to analyze')
+    showError('请输入或粘贴文本')
     return
   }
 
   if (text.value.trim().length < minLength) {
-    showError(`Please enter at least ${minLength} characters`)
+    showError(`请至少输入 ${minLength} 个字符`)
     return
   }
 
   try {
     await analyzeText(text.value, selectedMode.value)
-    showSuccess('Analysis completed successfully')
+    showSuccess('分析完成')
   } catch (err: any) {
-    showError(err.message || 'Analysis failed')
+    showError(err.message || '分析失败')
   }
 }
 
 function clearText() {
   text.value = ''
 }
-
-function handlePaste(event: ClipboardEvent) {
-  event.preventDefault()
-  const paste = event.clipboardData?.getData('text')
-  if (paste) {
-    const newText = text.value + paste
-    if (newText.length <= maxLength) {
-      text.value = newText
-    } else {
-      text.value = newText.slice(0, maxLength)
-    }
-  }
-}
-
-const modeDescriptions = {
-  accuracy: 'Fix grammatical, spelling, and tense errors while preserving style',
-  natural: 'Improve naturalness and flow of the text'
-}
 </script>
 
 <template>
-  <div class="bg-white rounded-lg shadow-md p-6 h-full flex flex-col">
-    <div class="flex items-center justify-between mb-4">
-      <h2 class="text-lg font-semibold text-gray-900">Input Text</h2>
+  <div class="bg-[rgba(30,58,95,0.35)] backdrop-blur-md border border-white/10 rounded-xl overflow-hidden h-full">
+    <!-- 标题栏 -->
+    <div class="flex items-center justify-between px-4 py-3 border-b border-slate-700/50">
+      <h2 class="font-semibold text-white">文本输入</h2>
       <button
         v-if="text"
         @click="clearText"
-        class="px-3 py-1.5 text-sm text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-md transition-colors"
+        class="p-1 hover:bg-slate-700/50 rounded transition-colors"
+        title="清空"
       >
-        Clear
+        <svg class="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+        </svg>
       </button>
     </div>
 
-    <div class="mb-4">
-      <label class="block text-sm font-medium text-gray-700 mb-2">Correction Mode</label>
-      <div class="flex gap-2">
-        <button
-          @click="selectedMode = 'accuracy'"
-          class="flex-1 px-4 py-2.5 rounded-lg text-sm font-medium transition-all duration-200"
-          :class="selectedMode === 'accuracy'
-            ? 'bg-primary-600 text-white shadow-md'
-            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'"
-        "
-        :title="modeDescriptions.accuracy"
-        >
-          <div class="flex flex-col items-center">
-            <span class="font-semibold">Accuracy</span>
-            <span class="text-xs opacity-80">Fix errors first</span>
-          </div>
-        </button>
-        <button
-          @click="selectedMode = 'naturalness'"
-          class="flex-1 px-4 py-2.5 rounded-lg text-sm font-medium transition-all duration-200"
-          :class="selectedMode === 'naturalness'
-            ? 'bg-primary-600 text-white shadow-md'
-            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'"
-        "
-          :title="modeDescriptions.natural"
-        >
-          <div class="flex flex-col items-center">
-            <span class="font-semibold">Naturalness</span>
-            <span class="text-xs opacity-80">Improve flow</span>
-          </div>
-        </button>
+    <!-- 内容区 -->
+    <div class="p-4">
+      <!-- 纠正模式切换 -->
+      <div class="bg-[rgba(30,58,95,0.5)] border border-white/10 rounded-lg p-1 mb-4">
+        <div class="flex gap-1">
+          <button
+            @click="selectedMode = 'accuracy'"
+            class="flex-1 px-3 py-2 rounded text-sm font-medium transition-all"
+            :class="selectedMode === 'accuracy'
+              ? 'bg-[rgba(59,130,246,0.2)] border border-blue-500 text-white'
+              : 'text-slate-300 hover:bg-slate-700/50'"
+          >
+            🎯 准确性优先
+          </button>
+          <button
+            @click="selectedMode = 'natural'"
+            class="flex-1 px-3 py-2 rounded text-sm font-medium transition-all"
+            :class="selectedMode === 'natural'
+              ? 'bg-[rgba(59,130,246,0.2)] border border-blue-500 text-white'
+              : 'text-slate-300 hover:bg-slate-700/50'"
+          >
+            ✨ 自然度优先
+          </button>
+        </div>
+        <p class="text-xs text-slate-400 mt-2 px-2">
+          {{ modeDescriptions[selectedMode] }}
+        </p>
       </div>
-    </div>
 
-    <div class="flex-1 mb-4">
+      <!-- 输入框 -->
       <textarea
         v-model="text"
-        @paste="handlePaste"
-        placeholder="Enter your English text here... (minimum 10 characters)"
-        class="w-full h-full min-h-[300px] p-4 border-2 border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent resize-none text-base leading-relaxed"
+        class="w-full h-64 bg-slate-900/50 border border-slate-700 rounded-lg p-4 text-slate-200 text-sm resize-none focus:outline-none focus:border-blue-500/50 focus:ring-2 focus:ring-blue-500/10 transition-all"
+        placeholder="粘贴任何英文文本...
+
+支持：
+• 对话（A: ... B: ...）
+• 邮件、作文、演讲稿
+• 日常表达
+• 中英夹杂
+
+AI 会自动识别文本类型并纠错"
         :disabled="isAnalyzing"
-        :maxlength="maxLength"
       ></textarea>
 
-      <div class="flex items-center justify-between mt-2 text-sm">
-        <div class="flex items-center gap-4">
-          <span class="text-gray-500">{{ charCount }} chars</span>
-          <span class="text-gray-400">|</span>
-          <span class="text-gray-500">{{ wordCount }} words</span>
-        </div>
-        <div
-          class="font-medium"
-          :class="{
-            'text-red-600': remainingChars < 100,
-            'text-yellow-600': remainingChars < 500 && remainingChars >= 100,
-            'text-gray-500': remainingChars >= 500
-          }"
+      <!-- 字符计数 -->
+      <div class="flex justify-between items-center mt-2 text-xs text-slate-400">
+        <span>{{ charCount }} / 5000</span>
+        <span class="text-slate-500">字符</span>
+      </div>
+
+      <!-- 操作按钮 -->
+      <div class="mt-4 space-y-2">
+        <button
+          @click="handleAnalyze"
+          :disabled="!canAnalyze"
+          class="w-full py-3 rounded-lg font-semibold flex items-center justify-center gap-2 transition-all bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+          :class="canAnalyze ? 'hover:-translate-y-px hover:shadow-lg hover:shadow-blue-500/30 text-white' : ''"
         >
-          {{ remainingChars }} remaining
+          <svg v-if="!isAnalyzing" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+          </svg>
+          <div v-else class="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+          {{ isAnalyzing ? '分析中...' : '分析文本' }}
+        </button>
+
+        <div class="flex gap-2">
+          <button class="flex-1 py-2 rounded-lg text-sm font-medium flex items-center justify-center gap-2 bg-[rgba(71,85,105,0.5)] border border-white/10 hover:bg-[rgba(71,85,105,0.7)] hover:border-blue-500/30 transition-all">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
+            </svg>
+            导入文件
+          </button>
+          <button
+            @click="clearText"
+            class="flex-1 py-2 rounded-lg text-sm font-medium flex items-center justify-center gap-2 bg-[rgba(71,85,105,0.5)] border border-white/10 hover:bg-[rgba(71,85,105,0.7)] hover:border-blue-500/30 transition-all"
+          >
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+            </svg>
+            清空
+          </button>
         </div>
       </div>
-    </div>
 
-    <div
-      v-if="isAnalyzing"
-      class="mb-4"
-    >
-      <div class="flex items-center justify-center py-3 bg-gray-50 rounded-lg">
-        <div class="flex items-center gap-3">
-          <div class="w-5 h-5 border-2 border-primary-600 border-t-transparent rounded-full animate-spin"></div>
-          <span class="text-sm text-gray-700">Analyzing...</span>
+      <!-- 支持格式 -->
+      <div class="mt-4 pt-4 border-t border-slate-700/50">
+        <p class="text-xs text-slate-500 mb-2">支持格式</p>
+        <div class="flex flex-wrap gap-2">
+          <span class="px-2 py-1 bg-slate-800/50 rounded text-xs text-slate-400">TXT</span>
+          <span class="px-2 py-1 bg-slate-800/50 rounded text-xs text-slate-400">JSON</span>
+          <span class="px-2 py-1 bg-slate-800/50 rounded text-xs text-slate-400">Markdown</span>
         </div>
-      </div>
-
-      <div class="mt-3">
-        <div class="flex justify-between text-xs text-gray-500 mb-1">
-          <span>Progress</span>
-          <span>{{ progressPercentage }}%</span>
-        </div>
-        <div class="h-2 bg-gray-200 rounded-full overflow-hidden">
-          <div
-            class="h-full bg-primary-600 transition-all duration-300 ease-out"
-            :style="{ width: progressPercentage + '%' }"
-          ></div>
-        </div>
-      </div>
-    </div>
-
-    <button
-      @click="handleAnalyze"
-      :disabled="!canAnalyze"
-      class="w-full py-3 px-6 bg-primary-600 text-white rounded-lg font-semibold text-base transition-all duration-200"
-      :class="{
-        'opacity-50 cursor-not-allowed': !canAnalyze,
-        'hover:bg-primary-700 hover:shadow-lg': canAnalyze,
-        'disabled:bg-gray-300': isAnalyzing
-      }"
-    >
-      <span v-if="isAnalyzing" class="flex items-center justify-center gap-2">
-        <div class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-        Analyzing...
-      </span>
-      <span v-else class="flex items-center justify-center gap-2">
-        <span>🔍</span>
-        Analyze Text
-      </span>
-    </button>
-
-    <div v-if="error" class="mt-4 p-4 bg-red-50 border-2 border-red-200 rounded-lg">
-      <div class="flex items-start gap-2">
-        <span class="text-red-600 text-lg">⚠️</span>
-        <div class="flex-1">
-          <p class="text-sm font-medium text-red-800">Analysis Error</p>
-          <p class="text-sm text-red-700 mt-1">{{ error }}</p>
-        </div>
-      </div>
-    </div>
-
-    <div v-if="isTooLong && !isAnalyzing" class="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
-      <div class="flex items-center gap-2">
-        <span class="text-yellow-600">⚠️</span>
-        <p class="text-sm text-yellow-800">
-          Text exceeds maximum length ({{ maxLength }} characters). Please shorten it.
-        </p>
       </div>
     </div>
   </div>
@@ -220,12 +172,7 @@ const modeDescriptions = {
 
 <style scoped>
 @keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
+  to { transform: rotate(360deg); }
 }
-
-.animate-spin {
-  animation: spin 0.8s linear infinite;
-}
+.animate-spin { animation: spin 0.8s linear infinite; }
 </style>
