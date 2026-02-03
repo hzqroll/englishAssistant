@@ -153,6 +153,10 @@ class UserSettings(Base):
     theme = Column(String(50), default="light", nullable=False)
     auto_save = Column(Boolean, default=True, nullable=False)
 
+    # LLM Configuration
+    active_llm_provider = Column(String(50), default="zhipu", nullable=False)
+    active_llm_model = Column(String(100), default="glm-4-flashx", nullable=False)
+
     # Extended preferences (JSONB for flexibility)
     preferences = Column(JSONB, default=dict)
 
