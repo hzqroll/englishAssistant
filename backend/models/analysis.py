@@ -42,7 +42,7 @@ class Analysis(Base, TimestampMixin, SoftDeleteMixin):
         validate_mode: Validate correction mode
     """
 
-    __tablename__ = "analyses"
+    __tablename__ = "ea_analyses"
 
     # Primary key
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -50,7 +50,7 @@ class Analysis(Base, TimestampMixin, SoftDeleteMixin):
     # User association (nullable for anonymous users)
     user_id = Column(
         UUID(as_uuid=True),
-        ForeignKey("users.id", ondelete="SET NULL"),
+        ForeignKey("ea_users.id", ondelete="SET NULL"),
         nullable=True,
         index=True
     )
@@ -97,10 +97,10 @@ class Analysis(Base, TimestampMixin, SoftDeleteMixin):
 
     # Composite indexes
     __table_args__ = (
-        Index('ix_analysis_user_date', 'user_id', 'created_at'),
-        Index('ix_analysis_user_deleted', 'user_id', 'is_deleted', 'created_at'),
-        Index('ix_analysis_mode_type', 'mode', 'text_type'),
-        Index('ix_analysis_cache', 'is_cached', 'created_at'),
+        Index('ix_ea_analysis_user_date', 'user_id', 'created_at'),
+        Index('ix_ea_analysis_user_deleted', 'user_id', 'is_deleted', 'created_at'),
+        Index('ix_ea_analysis_mode_type', 'mode', 'text_type'),
+        Index('ix_ea_analysis_cache', 'is_cached', 'created_at'),
     )
 
     @validates('mode')
@@ -165,7 +165,7 @@ class ErrorDetail(Base):
         analysis: Related Analysis object
     """
 
-    __tablename__ = "error_details"
+    __tablename__ = "ea_error_details"
 
     # Primary key
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -173,7 +173,7 @@ class ErrorDetail(Base):
     # Association
     analysis_id = Column(
         UUID(as_uuid=True),
-        ForeignKey("analyses.id", ondelete="CASCADE"),
+        ForeignKey("ea_analyses.id", ondelete="CASCADE"),
         nullable=False,
         index=True
     )
@@ -203,8 +203,8 @@ class ErrorDetail(Base):
 
     # Indexes
     __table_args__ = (
-        Index('ix_error_analysis_severity', 'analysis_id', 'severity'),
-        Index('ix_error_type', 'error_type', 'error_subtype'),
+        Index('ix_ea_error_analysis_severity', 'analysis_id', 'severity'),
+        Index('ix_ea_error_type', 'error_type', 'error_subtype'),
     )
 
     @validates('error_type')
@@ -271,12 +271,12 @@ class Tag(Base):
         updated_at: Last update timestamp
     """
 
-    __tablename__ = "tags"
+    __tablename__ = "ea_tags"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id = Column(
         UUID(as_uuid=True),
-        ForeignKey("users.id", ondelete="CASCADE"),
+        ForeignKey("ea_users.id", ondelete="CASCADE"),
         nullable=False,
         index=True
     )
@@ -290,7 +290,7 @@ class Tag(Base):
 
     # Index
     __table_args__ = (
-        Index('ix_tags_user_name', 'user_id', 'name'),
+        Index('ix_ea_tags_user_name', 'user_id', 'name'),
     )
 
 
@@ -304,16 +304,16 @@ class AnalysisTag(Base):
         created_at: Timestamp when tag was assigned
     """
 
-    __tablename__ = "analysis_tags"
+    __tablename__ = "ea_analysis_tags"
 
     analysis_id = Column(
         UUID(as_uuid=True),
-        ForeignKey("analyses.id", ondelete="CASCADE"),
+        ForeignKey("ea_analyses.id", ondelete="CASCADE"),
         primary_key=True
     )
     tag_id = Column(
         UUID(as_uuid=True),
-        ForeignKey("tags.id", ondelete="CASCADE"),
+        ForeignKey("ea_tags.id", ondelete="CASCADE"),
         primary_key=True
     )
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -336,7 +336,7 @@ class AnalysisCache(Base):
         is_valid: Whether cache entry is still valid
     """
 
-    __tablename__ = "analysis_cache"
+    __tablename__ = "ea_analysis_cache"
 
     content_hash = Column(String(64), primary_key=True)
     cached_result = Column(JSONB, nullable=False)

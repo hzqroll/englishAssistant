@@ -7,9 +7,20 @@ This module provides base classes and mixins that are used across all database m
 from sqlalchemy import Column, DateTime, Boolean
 from sqlalchemy.ext.declarative import declarative_base
 from datetime import datetime
+import uuid
 
 # Base class for all models
 Base = declarative_base()
+
+
+def get_uuid() -> str:
+    """
+    Generate a new UUID string.
+
+    Returns:
+        str: A new UUID as a string
+    """
+    return str(uuid.uuid4())
 
 
 class TimestampMixin:

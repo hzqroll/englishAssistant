@@ -4,7 +4,7 @@ Database models package.
 This package contains all SQLAlchemy database models.
 """
 
-from .base import Base, TimestampMixin, SoftDeleteMixin
+from .base import Base, TimestampMixin, SoftDeleteMixin, get_uuid
 from .user import User, UserSettings, APICredit
 from .analysis import (
     Analysis,
@@ -20,6 +20,7 @@ __all__ = [
     "Base",
     "TimestampMixin",
     "SoftDeleteMixin",
+    "get_uuid",
 
     # User models
     "User",

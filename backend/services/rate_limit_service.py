@@ -4,11 +4,14 @@ Rate limiting service.
 Manages API rate limiting and quota enforcement (in-memory for MVP version).
 """
 
+import logging
 from typing import Optional, Dict, Any
 from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 
 from models import User, APICredit
+
+logger = logging.getLogger(__name__)
 
 
 class RateLimitService:
@@ -32,7 +35,7 @@ class RateLimitService:
             "pro": {"hourly": 100, "daily": 500},
             "enterprise": {"hourly": 1000, "daily": 5000},
         }
-        self.quota_types = ["hourly", "daily"]
+        self.quota_types = ["hourly", "daily", "monthly"]
         self.request_counts: Dict[str, Dict[str, int]] = {}
 
     async def check_rate_limit(
@@ -58,12 +61,20 @@ class RateLimitService:
                 raise QuotaExceededError(info['message'])
             ```
         """
+        logger.info(f"[RATE_LIMIT] check_rate_limit called - user_id: {user_id}, user_tier: {user_tier}, quota_type: {quota_type}")
+
         limit = self._get_limit(user_tier, quota_type)
-        credit = self._get_or_create_credit(user_id, user_tier, quota_type, db)
+        logger.info(f"[RATE_LIMIT] Got limit: {limit} for tier: {user_tier}, type: {quota_type}")
+
+        logger.info(f"[RATE_LIMIT] About to call _get_or_create_credit - user_id: {user_id}, quota_type: {quota_type}, user_tier: {user_tier}")
+        credit = self._get_or_create_credit(user_id, quota_type, user_tier, db)
+        logger.info(f"[RATE_LIMIT] Got credit - quota_type: {credit.quota_type}, used: {credit.used}, quota: {credit.quota}")
 
         remaining = max(0, limit - credit.used)
         allowed = credit.used < limit
         reset_at = credit.period_end
+
+        logger.info(f"[RATE_LIMIT] Rate limit check result - allowed: {allowed}, remaining: {remaining}")
 
         return (
             allowed,
@@ -88,18 +99,15 @@ class RateLimitService:
             estimated_cost: Estimated cost in currency
             db: Database session
         """
-        now = datetime.utcnow()
+        # Get user tier from database
+        user = db.query(User).filter(User.id == user_id).first()
+        user_tier = user.tier if user else "free"
 
-        daily_credit = self._get_or_create_credit(user_id, "daily", "free", db)
+        # Track daily usage
+        daily_credit = self._get_or_create_credit(user_id, "daily", user_tier, db)
         daily_credit.used += 1
         daily_credit.total_tokens_used += tokens_used
         daily_credit.estimated_cost += estimated_cost
-        daily_credit.period_end = daily_credit.period_start + timedelta(days=1)
-
-        monthly_credit = self._get_or_create_credit(user_id, "monthly", "free", db)
-        monthly_credit.used += 1
-        monthly_credit.total_tokens_used += tokens_used
-        monthly_credit.estimated_cost += estimated_cost
 
         db.commit()
 
@@ -131,7 +139,10 @@ class RateLimitService:
         Returns:
             APICredit object
         """
+        logger.info(f"[GET_CREDIT] _get_or_create_credit called - user_id: {user_id}, quota_type: {quota_type}, user_tier: {user_tier}")
+
         limit = self._get_limit(user_tier, quota_type)
+        logger.info(f"[GET_CREDIT] Calculated limit: {limit}")
 
         now = datetime.utcnow()
 
@@ -149,6 +160,8 @@ class RateLimitService:
             period_start = now
             period_end = now + timedelta(days=1)
 
+        logger.info(f"[GET_CREDIT] Querying for existing credit - quota_type: {quota_type}, period_start: {period_start}")
+
         credit = (
             db.query(APICredit)
             .filter(APICredit.user_id == user_id)
@@ -158,11 +171,25 @@ class RateLimitService:
         )
 
         if not credit:
+            logger.info(f"[GET_CREDIT] No existing credit found, creating new - quota_type: {quota_type}")
             from models import get_uuid
+            from uuid import UUID
+
+            # Convert user_id string to UUID if needed
+            if isinstance(user_id, str):
+                try:
+                    user_id_uuid = UUID(user_id)
+                except ValueError:
+                    # For anonymous users with "anon:" prefix
+                    user_id_uuid = UUID(get_uuid())
+            else:
+                user_id_uuid = user_id
+
+            logger.info(f"[GET_CREDIT] Creating APICredit with - quota_type: {quota_type}, quota: {limit}, user_id: {user_id_uuid}")
 
             credit = APICredit(
                 id=get_uuid(),
-                user_id=get_uuid(),
+                user_id=user_id_uuid,
                 quota_type=quota_type,
                 quota=limit,
                 used=0,
@@ -171,6 +198,7 @@ class RateLimitService:
             )
             db.add(credit)
             db.commit()
+            logger.info(f"[GET_CREDIT] APICredit created successfully - quota_type: {credit.quota_type}")
 
         return credit
 
