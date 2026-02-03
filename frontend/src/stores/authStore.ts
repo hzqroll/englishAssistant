@@ -25,7 +25,6 @@ export const useAuthStore = defineStore('auth', () => {
 
   // Actions
   async function login(email: string, password: string) {
-    // TODO: Implement login logic
     isLoading.value = true
     error.value = null
     try {
@@ -34,26 +33,49 @@ export const useAuthStore = defineStore('auth', () => {
       refreshToken_val.value = response.data.refresh_token
       localStorage.setItem('access_token', response.data.access_token)
       localStorage.setItem('refresh_token', response.data.refresh_token)
-      // TODO: Fetch user profile
-      // await fetchUserProfile()
+
+      // Set user data from response
+      user.value = {
+        id: response.data.user_id,
+        email: response.data.email,
+        tier: response.data.tier,
+        createdAt: new Date().toISOString(),
+      }
+
+      // Fetch full user profile
+      await fetchUserProfile()
     } catch (err: any) {
-      error.value = err.response?.data?.message || 'Login failed'
+      error.value = err.response?.data?.detail || err.response?.data?.message || 'Login failed'
       throw err
     } finally {
       isLoading.value = false
     }
   }
 
-  async function register(email: string, password: string, username: string) {
-    // TODO: Implement registration logic
+  async function register(email: string, password: string, username?: string) {
     isLoading.value = true
     error.value = null
     try {
-      await authApi.register({ email, password, username })
-      // Auto-login after registration
-      await login(email, password)
+      const response = await authApi.register({ email, password, username: username || email.split('@')[0] })
+
+      // Set tokens from registration response
+      accessToken.value = response.data.access_token
+      refreshToken_val.value = response.data.refresh_token
+      localStorage.setItem('access_token', response.data.access_token)
+      localStorage.setItem('refresh_token', response.data.refresh_token)
+
+      // Set user data
+      user.value = {
+        id: response.data.user_id,
+        email: response.data.email,
+        tier: response.data.tier,
+        createdAt: new Date().toISOString(),
+      }
+
+      // Fetch full user profile
+      await fetchUserProfile()
     } catch (err: any) {
-      error.value = err.response?.data?.message || 'Registration failed'
+      error.value = err.response?.data?.detail || err.response?.data?.message || 'Registration failed'
       throw err
     } finally {
       isLoading.value = false
@@ -61,31 +83,31 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   async function logout() {
-    // TODO: Implement logout logic
     user.value = null
     accessToken.value = null
     refreshToken_val.value = null
     localStorage.removeItem('access_token')
     localStorage.removeItem('refresh_token')
+    error.value = null
   }
 
   async function fetchUserProfile() {
-    // TODO: Implement fetch user profile
     if (!accessToken.value) return
 
     try {
       const response = await authApi.me()
       user.value = {
-        ...response.data,
+        id: response.data.id,
+        email: response.data.email,
+        tier: response.data.tier,
         createdAt: response.data.created_at,
       }
     } catch (err: any) {
-      error.value = err.response?.data?.message || 'Failed to fetch user profile'
+      error.value = err.response?.data?.detail || err.response?.data?.message || 'Failed to fetch user profile'
     }
   }
 
   async function refreshAccessToken() {
-    // TODO: Implement token refresh logic
     if (!refreshToken_val.value) {
       await logout()
       throw new Error('No refresh token available')
@@ -94,7 +116,9 @@ export const useAuthStore = defineStore('auth', () => {
     try {
       const response = await authApi.refresh({ refresh_token: refreshToken_val.value })
       accessToken.value = response.data.access_token
+      refreshToken_val.value = response.data.refresh_token
       localStorage.setItem('access_token', response.data.access_token)
+      localStorage.setItem('refresh_token', response.data.refresh_token)
     } catch (err) {
       await logout()
       throw err

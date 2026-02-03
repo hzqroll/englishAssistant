@@ -10,6 +10,7 @@ from .base import BaseLLMProvider, LLMProviderError
 from .zhipu_provider import ZhipuProvider
 from .openai_provider import OpenAIProvider
 from .anthropic_provider import AnthropicProvider
+from .gemini_provider import GeminiProvider
 
 
 class LLMProviderFactory:
@@ -42,6 +43,7 @@ class LLMProviderFactory:
         "zhipu": ZhipuProvider,
         "openai": OpenAIProvider,
         "anthropic": AnthropicProvider,
+        "gemini": GeminiProvider,
     }
 
     # Provider display names
@@ -49,6 +51,7 @@ class LLMProviderFactory:
         "zhipu": "Zhipu AI",
         "openai": "OpenAI",
         "anthropic": "Anthropic",
+        "gemini": "Google Gemini",
     }
 
     @classmethod

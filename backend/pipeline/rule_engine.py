@@ -8,6 +8,7 @@ grammar, spelling, and tense checking using LanguageTool.
 from dataclasses import dataclass
 from typing import List, Optional, Dict, Any
 from enum import Enum
+import threading
 import language_tool_python
 
 
@@ -99,13 +100,19 @@ class RuleEngine:
     Rule-based grammar checking engine.
 
     Uses LanguageTool to detect grammar, spelling, and tense errors.
+    Implements singleton pattern for LanguageTool instance to avoid
+    expensive re-initialization (10-12 seconds) on every request.
 
     Attributes:
         language: Language code for checking (default: en-US)
         enabled_rules: Set of enabled rule categories
         max_errors: Maximum number of errors to detect
-        tool: LanguageTool client instance
+        tool: LanguageTool client instance (shared across all instances)
     """
+
+    # Class-level singleton storage
+    _tool_instances: Dict[str, language_tool_python.LanguageTool] = {}
+    _lock = threading.Lock()
 
     def __init__(
         self, language: str = "en-US", enabled_rules: Optional[set] = None, max_errors: int = 100
@@ -127,10 +134,40 @@ class RuleEngine:
         }
         self.max_errors = max_errors
 
-        try:
-            self.tool = language_tool_python.LanguageTool(language)
-        except Exception as e:
-            raise RuleEngineError(f"Failed to initialize LanguageTool: {str(e)}")
+        # Use singleton pattern for LanguageTool instance
+        self.tool = self._get_tool_instance(language)
+
+    @classmethod
+    def _get_tool_instance(cls, language: str) -> language_tool_python.LanguageTool:
+        """
+        Get or create a singleton LanguageTool instance for the specified language.
+
+        This method implements thread-safe singleton pattern to avoid expensive
+        re-initialization of LanguageTool (which takes 10-12 seconds).
+
+        Args:
+            language: Language code for the tool
+
+        Returns:
+            Shared LanguageTool instance for the language
+
+        Raises:
+            RuleEngineError: If tool initialization fails
+        """
+        # Fast path: check if instance exists without acquiring lock
+        if language in cls._tool_instances:
+            return cls._tool_instances[language]
+
+        # Slow path: acquire lock and create instance if needed
+        with cls._lock:
+            # Double-check after acquiring lock (another thread might have created it)
+            if language not in cls._tool_instances:
+                try:
+                    cls._tool_instances[language] = language_tool_python.LanguageTool(language)
+                except Exception as e:
+                    raise RuleEngineError(f"Failed to initialize LanguageTool: {str(e)}")
+
+            return cls._tool_instances[language]
 
     def check(self, text: str) -> List[GrammarError]:
         """

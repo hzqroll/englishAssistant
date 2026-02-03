@@ -67,13 +67,14 @@ async def root():
 
 
 # Include API routers
-from api.v1 import auth, analysis, history, statistics, settings
+from api.v1 import auth, analysis, history, statistics, settings, llm_config
 
 app.include_router(auth.router, prefix="/api/v1/auth", tags=["auth"])
 app.include_router(analysis.router, prefix="/api/v1", tags=["analysis"])
 app.include_router(history.router, prefix="/api/v1", tags=["history"])
 app.include_router(statistics.router, prefix="/api/v1/statistics", tags=["statistics"])
 app.include_router(settings.router, prefix="/api/v1", tags=["settings"])
+app.include_router(llm_config.router, tags=["LLM Configuration"])
 
 # TODO: Uncomment when export router is implemented
 # from api.v1 import export

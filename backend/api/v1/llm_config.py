@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from typing import List
 
 from models.session import get_db
-from api.v1.dependencies import get_current_user
+from core.security import get_current_user
 from models.user import User
 from services.llm import (
     LLMConfigService,

@@ -5,13 +5,42 @@ Manages API rate limiting and quota enforcement (in-memory for MVP version).
 """
 
 import logging
+import hashlib
 from typing import Optional, Dict, Any
 from datetime import datetime, timedelta
+from uuid import UUID
 from sqlalchemy.orm import Session
 
 from models import User, APICredit
 
 logger = logging.getLogger(__name__)
+
+
+def _user_id_to_uuid(user_id: str) -> UUID:
+    """
+    Convert user_id string to UUID.
+
+    For anonymous users with "anon:" prefix, generates a deterministic UUID
+    from the string using MD5 hash. This ensures the same anonymous user
+    (same IP) always gets the same UUID.
+
+    Args:
+        user_id: User ID string (UUID string or "anon:*" format)
+
+    Returns:
+        UUID object
+    """
+    if isinstance(user_id, UUID):
+        return user_id
+
+    try:
+        # Try to parse as UUID directly
+        return UUID(user_id)
+    except ValueError:
+        # For anonymous users with "anon:" prefix, generate deterministic UUID
+        # from MD5 hash of the string
+        hash_digest = hashlib.md5(user_id.encode()).hexdigest()
+        return UUID(hash_digest)
 
 
 class RateLimitService:
@@ -66,6 +95,27 @@ class RateLimitService:
         limit = self._get_limit(user_tier, quota_type)
         logger.info(f"[RATE_LIMIT] Got limit: {limit} for tier: {user_tier}, type: {quota_type}")
 
+        # For anonymous users, use in-memory tracking only
+        if user_tier == "anonymous":
+            used = self._get_in_memory_count(user_id, quota_type)
+            remaining = max(0, limit - used)
+            allowed = used < limit
+            reset_in = 3600 if quota_type == "hourly" else 86400  # 1 hour or 24 hours
+
+            logger.info(f"[RATE_LIMIT] Anonymous user rate limit check - used: {used}, allowed: {allowed}")
+
+            return (
+                allowed,
+                {
+                    "limit_type": quota_type,
+                    "limit": limit,
+                    "used": used,
+                    "remaining": remaining,
+                    "resets_in": reset_in,
+                },
+            )
+
+        # For authenticated users, use database tracking
         logger.info(f"[RATE_LIMIT] About to call _get_or_create_credit - user_id: {user_id}, quota_type: {quota_type}, user_tier: {user_tier}")
         credit = self._get_or_create_credit(user_id, quota_type, user_tier, db)
         logger.info(f"[RATE_LIMIT] Got credit - quota_type: {credit.quota_type}, used: {credit.used}, quota: {credit.quota}")
@@ -94,22 +144,59 @@ class RateLimitService:
         Track API usage for rate limiting.
 
         Args:
-            user_id: User ID
+            user_id: User ID (string - can be UUID or "anon:*" format)
             tokens_used: Number of tokens consumed
             estimated_cost: Estimated cost in currency
             db: Database session
         """
-        # Get user tier from database
-        user = db.query(User).filter(User.id == user_id).first()
-        user_tier = user.tier if user else "free"
+        # For anonymous users (identified by "anon:" prefix), use in-memory tracking only
+        if user_id.startswith("anon:"):
+            self._increment_in_memory_count(user_id, "daily")
+            return
 
-        # Track daily usage
-        daily_credit = self._get_or_create_credit(user_id, "daily", user_tier, db)
+        # For authenticated users, convert to UUID and track in database
+        user_id_uuid = _user_id_to_uuid(user_id)
+        user = db.query(User).filter(User.id == user_id_uuid).first()
+
+        if not user:
+            # If user not found, treat as anonymous
+            self._increment_in_memory_count(user_id, "daily")
+            return
+
+        # Track daily usage in database for authenticated users
+        daily_credit = self._get_or_create_credit(str(user_id_uuid), "daily", user.tier, db)
         daily_credit.used += 1
         daily_credit.total_tokens_used += tokens_used
         daily_credit.estimated_cost += estimated_cost
 
         db.commit()
+
+    def _get_in_memory_count(self, user_id: str, quota_type: str) -> int:
+        """
+        Get in-memory request count for anonymous users.
+
+        Args:
+            user_id: User ID
+            quota_type: Quota type
+
+        Returns:
+            Current count
+        """
+        if user_id not in self.request_counts:
+            self.request_counts[user_id] = {}
+        return self.request_counts[user_id].get(quota_type, 0)
+
+    def _increment_in_memory_count(self, user_id: str, quota_type: str) -> None:
+        """
+        Increment in-memory request count for anonymous users.
+
+        Args:
+            user_id: User ID
+            quota_type: Quota type
+        """
+        if user_id not in self.request_counts:
+            self.request_counts[user_id] = {}
+        self.request_counts[user_id][quota_type] = self._get_in_memory_count(user_id, quota_type) + 1
 
     def _get_limit(self, user_tier: str, quota_type: str) -> int:
         """
@@ -162,9 +249,12 @@ class RateLimitService:
 
         logger.info(f"[GET_CREDIT] Querying for existing credit - quota_type: {quota_type}, period_start: {period_start}")
 
+        # Convert user_id to UUID for database query
+        user_id_uuid = _user_id_to_uuid(user_id)
+
         credit = (
             db.query(APICredit)
-            .filter(APICredit.user_id == user_id)
+            .filter(APICredit.user_id == user_id_uuid)
             .filter(APICredit.quota_type == quota_type)
             .filter(APICredit.period_start == period_start)
             .first()
@@ -173,17 +263,6 @@ class RateLimitService:
         if not credit:
             logger.info(f"[GET_CREDIT] No existing credit found, creating new - quota_type: {quota_type}")
             from models import get_uuid
-            from uuid import UUID
-
-            # Convert user_id string to UUID if needed
-            if isinstance(user_id, str):
-                try:
-                    user_id_uuid = UUID(user_id)
-                except ValueError:
-                    # For anonymous users with "anon:" prefix
-                    user_id_uuid = UUID(get_uuid())
-            else:
-                user_id_uuid = user_id
 
             logger.info(f"[GET_CREDIT] Creating APICredit with - quota_type: {quota_type}, quota: {limit}, user_id: {user_id_uuid}")
 
@@ -216,6 +295,9 @@ class RateLimitService:
         """
         from models import APICredit
 
+        # Convert user_id to UUID for database query
+        user_id_uuid = _user_id_to_uuid(user_id)
+
         now = datetime.utcnow()
 
         if quota_type == "daily":
@@ -234,7 +316,7 @@ class RateLimitService:
 
         credit = (
             db.query(APICredit)
-            .filter(APICredit.user_id == user_id)
+            .filter(APICredit.user_id == user_id_uuid)
             .filter(APICredit.quota_type == quota_type)
             .filter(APICredit.period_start == period_start)
             .first()
@@ -260,7 +342,10 @@ class RateLimitService:
         """
         from models import APICredit
 
-        credits = db.query(APICredit).filter(APICredit.user_id == user_id).all()
+        # Convert user_id to UUID for database query
+        user_id_uuid = _user_id_to_uuid(user_id)
+
+        credits = db.query(APICredit).filter(APICredit.user_id == user_id_uuid).all()
 
         stats = {"tier": None, "quotas": {}}
 
