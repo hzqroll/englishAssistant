@@ -13,7 +13,10 @@ const stats = computed(() => {
     grammar: currentResult.value.errors.filter(e => e.type === 'grammar'),
     tense: currentResult.value.errors.filter(e => e.type === 'tense'),
     wordChoice: currentResult.value.errors.filter(e => e.type === 'word_choice'),
-    chinese: currentResult.value.errors.filter(e => e.type === 'chinese')
+    spelling: currentResult.value.errors.filter(e => e.type === 'spelling'),
+    punctuation: currentResult.value.errors.filter(e => e.type === 'punctuation'),
+    style: currentResult.value.errors.filter(e => e.type === 'style'),
+    mixed: currentResult.value.errors.filter(e => e.type === 'mixed_language' || e.type === 'chinese')
   }
 })
 
@@ -31,6 +34,17 @@ const errorCategories = computed(() => {
       bgClass: 'bg-red-500/20',
       count: stats.value.grammar.length,
       errors: stats.value.grammar
+    },
+    {
+      key: 'spelling',
+      name: '拼写错误',
+      englishName: 'Spelling',
+      icon: 'Ab',
+      colorClass: 'yellow',
+      borderClass: 'error-card-spelling',
+      bgClass: 'bg-yellow-500/20',
+      count: stats.value.spelling.length,
+      errors: stats.value.spelling
     },
     {
       key: 'tense',
@@ -55,15 +69,37 @@ const errorCategories = computed(() => {
       errors: stats.value.wordChoice
     },
     {
-      key: 'chinese',
+      key: 'punctuation',
+      name: '标点符号',
+      englishName: 'Punctuation',
+      icon: '.,',
+      colorClass: 'gray',
+      borderClass: 'error-card-punctuation',
+      bgClass: 'bg-gray-500/20',
+      count: stats.value.punctuation.length,
+      errors: stats.value.punctuation
+    },
+    {
+      key: 'style',
+      name: '风格建议',
+      englishName: 'Style',
+      icon: '✨',
+      colorClass: 'emerald',
+      borderClass: 'error-card-style',
+      bgClass: 'bg-emerald-500/20',
+      count: stats.value.style.length,
+      errors: stats.value.style
+    },
+    {
+      key: 'mixed',
       name: '中英混用',
       englishName: 'Mixed Language',
       icon: '文',
       colorClass: 'pink',
-      borderClass: 'error-card-chinese',
+      borderClass: 'error-card-mixed',
       bgClass: 'bg-pink-500/20',
-      count: stats.value.chinese.length,
-      errors: stats.value.chinese
+      count: stats.value.mixed.length,
+      errors: stats.value.mixed
     }
   ].filter(cat => cat.count > 0)
 })
@@ -192,5 +228,8 @@ const errorCategories = computed(() => {
 .error-card-grammar { border-left: 3px solid rgb(248, 113, 113); }
 .error-card-tense { border-left: 3px solid rgb(251, 146, 60); }
 .error-card-word { border-left: 3px solid rgb(167, 139, 250); }
-.error-card-chinese { border-left: 3px solid rgb(244, 114, 182); }
+.error-card-mixed { border-left: 3px solid rgb(244, 114, 182); }
+.error-card-spelling { border-left: 3px solid rgb(234, 179, 8); }
+.error-card-punctuation { border-left: 3px solid rgb(107, 114, 128); }
+.error-card-style { border-left: 3px solid rgb(16, 185, 129); }
 </style>

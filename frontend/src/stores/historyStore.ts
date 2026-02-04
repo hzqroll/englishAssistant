@@ -42,8 +42,19 @@ export const useHistoryStore = defineStore('history', () => {
         ...currentFilters,
       })
 
-      items.value = response.data.data.items
-      total.value = response.data.data.total
+      const data = response.data
+      
+      // Map backend snake_case to frontend camelCase
+      items.value = data.items.map(item => ({
+        id: item.id,
+        originalText: item.original_text,
+        correctedText: item.corrected_text,
+        mode: item.mode as any,
+        errorCount: item.error_count,
+        createdAt: item.created_at
+      }))
+      
+      total.value = data.total
       page.value = currentPage
     } catch (err: any) {
       error.value = err.response?.data?.message || 'Failed to fetch history'

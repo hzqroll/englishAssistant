@@ -1,5 +1,5 @@
 import apiClient from './index'
-import type { CorrectionMode, AnalysisResult } from '@/stores/types'
+import type { CorrectionMode, AnalysisApiResponse } from '@/stores/types'
 
 /**
  * Analysis API
@@ -16,6 +16,6 @@ export const analysisApi = {
    * Analyze and correct text
    */
   async analyze(data: AnalyzeRequest) {
-    return apiClient.post<{ success: boolean; data: AnalysisResult }>('/analyze', data)
+    return apiClient.post<AnalysisApiResponse>('/analyze', data)
   },
 }

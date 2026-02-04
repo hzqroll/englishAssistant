@@ -27,7 +27,7 @@ async def get_history(
     limit: int = Query(20, ge=1, le=100, description="Maximum records to return"),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
-) -> List[Dict[str, Any]]:
+) -> Dict[str, Any]:
     """
     Get user's analysis history with pagination.
 
@@ -38,10 +38,7 @@ async def get_history(
         db: Database session
 
     Returns:
-        List of analysis history items
-
-    Raises:
-        401: If authentication fails
+        Paginated history list
     """
     try:
         service = get_analysis_service()

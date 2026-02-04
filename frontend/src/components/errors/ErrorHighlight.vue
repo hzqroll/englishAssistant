@@ -38,7 +38,7 @@ const highlightedOriginal = computed(() => {
 })
 
 const highlightedCorrected = computed(() => {
-  return applyHighlights(props.correctedText, props.errors, false)
+  return applyHighlights(props.originalText, props.errors, false)
 })
 
 function applyHighlights(
@@ -68,20 +68,16 @@ function applyHighlights(
       const isSelected = props.selectedErrorId === error.id
       const isHovered = hoveredErrorId.value === error.id
 
+      const errorClass = [
+        severityColors[error.severity],
+        severityBorders[error.severity],
+        isSelected ? 'ring-2 ring-primary-500' : '',
+        isHovered ? 'ring-2 ring-primary-300' : ''
+      ].join(' ')
+
       result += `<span
-        class="cursor-pointer rounded px-1 transition-all duration-150"
+        class="cursor-pointer rounded px-1 transition-all duration-150 ${errorClass}"
         data-error-id="${error.id}"
-        data-start="${startPos}"
-        data-end="${endPos}"
-        @click="handleErrorClick('${error.id}')"
-        @mouseenter="handleErrorHover('${error.id}')"
-        @mouseleave="handleErrorHover(null)"
-        :class="[
-          severityColors[error.severity],
-          severityBorders[error.severity],
-          isSelected ? 'ring-2 ring-primary-500' : '',
-          isHovered ? 'ring-2 ring-primary-300' : ''
-        ].join(' ')"
         style="text-decoration: ${isOriginal ? 'line-through' : 'none'}; opacity: ${isOriginal ? '0.7' : '1'};"
       >${spanText}</span>`
 
@@ -91,6 +87,32 @@ function applyHighlights(
 
   result += text.slice(lastIndex)
   return result
+}
+
+function handleContainerClick(event: MouseEvent) {
+  const target = event.target as HTMLElement
+  const errorId = target.getAttribute('data-error-id')
+  if (errorId) {
+    handleErrorClick(errorId)
+  }
+}
+
+function handleContainerHover(event: MouseEvent) {
+  const target = event.target as HTMLElement
+  const errorId = target.getAttribute('data-error-id')
+  
+  if (errorId) {
+    if (hoveredErrorId.value !== errorId) {
+      const error = props.errors.find(e => e.id === errorId)
+      if (error) {
+        emit('errorHover', error)
+        hoveredErrorId.value = errorId
+      }
+    }
+  } else if (hoveredErrorId.value) {
+    emit('errorHover', null)
+    hoveredErrorId.value = null
+  }
 }
 
 function handleErrorClick(errorId: string) {
@@ -104,8 +126,12 @@ function handleErrorHover(errorId: string | null) {
   const error = errorId
     ? props.errors.find(e => e.id === errorId)
     : null
-  emit('errorHover', error)
-  hoveredErrorId.value = errorId
+  
+  // Only emit if error exists or we are clearing it (errorId is null)
+  if (error || errorId === null) {
+    emit('errorHover', error || null)
+    hoveredErrorId.value = errorId
+  }
 }
 
 function scrollToError(errorId: string) {
@@ -139,6 +165,9 @@ watch(() => props.selectedErrorId, (newId) => {
       <div
         class="flex-1 min-h-[200px] p-4 bg-gray-50 rounded-lg border-2 border-gray-200 overflow-auto whitespace-pre-wrap text-gray-900"
         v-html="highlightedOriginal"
+        @click="handleContainerClick"
+        @mouseover="handleContainerHover"
+        @mouseleave="handleErrorHover(null)"
       />
     </div>
 
@@ -153,6 +182,9 @@ watch(() => props.selectedErrorId, (newId) => {
       <div
         class="flex-1 min-h-[200px] p-4 bg-green-50 rounded-lg border-2 border-green-200 overflow-auto whitespace-pre-wrap text-gray-900"
         v-html="highlightedCorrected"
+        @click="handleContainerClick"
+        @mouseover="handleContainerHover"
+        @mouseleave="handleErrorHover(null)"
       />
     </div>
 

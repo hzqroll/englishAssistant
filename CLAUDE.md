@@ -11,12 +11,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Backend**: ✅ Complete and Working (all core endpoints tested and operational)
 - **Frontend**: 🔄 In Progress (components built, backend integration needed)
 - **Pipeline**: ✅ Operational (4-stage pipeline processing text successfully)
-- **LLM Multi-Provider**: ✅ Complete (Zhipu AI, OpenAI, Anthropic support)
+- **LLM Multi-Provider**: ✅ Complete (Zhipu AI, OpenAI, Anthropic, Gemini support)
 - **Documentation**: Complete (see `/docs` directory)
 
 ### Latest Work
+- ✅ **Performance optimization** - LanguageTool singleton pattern reduces response time from 12s to ~4s
+- ✅ **Gemini provider added** - Google Gemini integration complete (4 models)
 - ✅ **Analyze endpoint operational** - Successfully processing text with error detection
-- ✅ **LLM multi-provider system** - 19 files, 3 providers, 10 models
+- ✅ **LLM multi-provider system** - 20 files, 4 providers, 14 models
 - ✅ **Anonymous user support** - In-memory rate limiting working
 - ✅ **Rate limiting fixed** - UUID handling for anonymous users resolved
 - Branch: `feature/mvp_v1`

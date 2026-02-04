@@ -46,6 +46,33 @@ export interface AnalysisResult {
   createdAt: string
 }
 
+/**
+ * Backend API Response Types
+ */
+export interface ErrorDetailResponse {
+  error_type: string
+  error_subtype?: string
+  original_span: string
+  corrected_span: string
+  start_index: number
+  end_index: number
+  explanation?: string
+  rule_description?: string
+  severity: 'low' | 'medium' | 'high'
+}
+
+export interface AnalysisApiResponse {
+  analysis_id: string
+  original_text: string
+  corrected_text: string
+  mode: string
+  errors: ErrorDetailResponse[]
+  statistics: Record<string, any>
+  processing_time_ms: number
+  token_usage: Record<string, any>
+  created_at: string
+}
+
 export interface AnalysisState {
   currentResult: AnalysisResult | null
   isAnalyzing: boolean

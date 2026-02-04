@@ -16,7 +16,14 @@ export interface GetHistoryListParams {
 }
 
 export interface HistoryListResponse {
-  items: HistoryItem[]
+  items: Array<{
+    id: string
+    original_text: string
+    corrected_text: string
+    mode: string
+    error_count: number
+    created_at: string
+  }>
   total: number
   page: number
   page_size: number
@@ -27,7 +34,7 @@ export const historyApi = {
    * Get user's analysis history
    */
   async getList(params?: GetHistoryListParams) {
-    return apiClient.get<{ success: boolean; data: HistoryListResponse }>('/history', { params })
+    return apiClient.get<HistoryListResponse>('/history', { params })
   },
 
   /**

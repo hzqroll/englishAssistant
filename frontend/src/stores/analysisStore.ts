@@ -32,10 +32,33 @@ export const useAnalysisStore = defineStore('analysis', () => {
     try {
       // TODO: Add progress simulation or real-time updates
       const response = await analysisApi.analyze({ text, mode: correctionMode })
-      currentResult.value = response.data.data
+      const data = response.data
+      
+      // Map API response to internal state
+      const result: AnalysisResult = {
+        id: data.analysis_id,
+        originalText: data.original_text,
+        correctedText: data.corrected_text,
+        mode: data.mode as CorrectionMode,
+        errors: data.errors.map((e, index) => ({
+          id: `err-${index}-${e.start_index}`,
+          type: e.error_type,
+          severity: e.severity,
+          originalText: e.original_span,
+          correctedText: e.corrected_span,
+          message: e.explanation || e.rule_description || 'Found an error',
+          suggestion: e.corrected_span,
+          startPosition: e.start_index,
+          endPosition: e.end_index
+        })),
+        learningTips: [], // TODO: Extract from statistics or separate endpoint
+        createdAt: data.created_at
+      }
+      
+      currentResult.value = result
       mode.value = correctionMode
       progress.value = 100
-      return response.data.data
+      return result
     } catch (err: any) {
       error.value = err.response?.data?.message || 'Analysis failed'
       throw err

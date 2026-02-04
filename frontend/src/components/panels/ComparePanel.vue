@@ -38,7 +38,10 @@ const stats = computed(() => {
     grammar: currentResult.value.errors.filter(e => e.type === 'grammar').length,
     tense: currentResult.value.errors.filter(e => e.type === 'tense').length,
     wordChoice: currentResult.value.errors.filter(e => e.type === 'word_choice').length,
-    chinese: currentResult.value.errors.filter(e => e.type === 'chinese').length
+    spelling: currentResult.value.errors.filter(e => e.type === 'spelling').length,
+    punctuation: currentResult.value.errors.filter(e => e.type === 'punctuation').length,
+    style: currentResult.value.errors.filter(e => e.type === 'style').length,
+    mixed: currentResult.value.errors.filter(e => e.type === 'mixed_language' || e.type === 'chinese').length
   }
 })
 
@@ -105,18 +108,18 @@ function handleReanalyze() {
             <div class="text-xs text-slate-500">语法</div>
           </div>
           <div class="bg-[rgba(30,58,95,0.3)] border border-white/8 rounded-lg p-3 text-center hover:bg-[rgba(59,130,246,0.12)] hover:border-blue-500/30 transition-all">
+            <div class="text-xs text-slate-400 mb-1">Ab</div>
+            <div class="text-2xl font-bold text-yellow-400">{{ stats.spelling }}</div>
+            <div class="text-xs text-slate-500">拼写</div>
+          </div>
+          <div class="bg-[rgba(30,58,95,0.3)] border border-white/8 rounded-lg p-3 text-center hover:bg-[rgba(59,130,246,0.12)] hover:border-blue-500/30 transition-all">
             <div class="text-xs text-slate-400 mb-1">↻</div>
             <div class="text-2xl font-bold text-orange-400">{{ stats.tense }}</div>
             <div class="text-xs text-slate-500">时态</div>
           </div>
           <div class="bg-[rgba(30,58,95,0.3)] border border-white/8 rounded-lg p-3 text-center hover:bg-[rgba(59,130,246,0.12)] hover:border-blue-500/30 transition-all">
-            <div class="text-xs text-slate-400 mb-1">Aa</div>
-            <div class="text-2xl font-bold text-purple-400">{{ stats.wordChoice }}</div>
-            <div class="text-xs text-slate-500">单词</div>
-          </div>
-          <div class="bg-[rgba(30,58,95,0.3)] border border-white/8 rounded-lg p-3 text-center hover:bg-[rgba(59,130,246,0.12)] hover:border-blue-500/30 transition-all">
             <div class="text-xs text-slate-400 mb-1">文</div>
-            <div class="text-2xl font-bold text-pink-400">{{ stats.chinese }}</div>
+            <div class="text-2xl font-bold text-pink-400">{{ stats.mixed }}</div>
             <div class="text-xs text-slate-500">中英混用</div>
           </div>
         </div>

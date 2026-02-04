@@ -158,7 +158,7 @@ class AnalysisService:
         db: Session,
         skip: int = 0,
         limit: int = 20
-    ) -> List[Dict[str, Any]]:
+    ) -> Dict[str, Any]:
         """
         Get user's analysis history.
 
@@ -169,35 +169,42 @@ class AnalysisService:
             limit: Maximum records to return
 
         Returns:
-            List of analysis history items
+            Dictionary containing items, total count, page, and page_size
         """
-        # TODO: Implement history retrieval
-        # 1. Query analyses for user
-        # 2. Filter by soft delete
-        # 3. Paginate results
-        # 4. Return formatted data
-
-        analyses = (
+        query = (
             db.query(Analysis)
             .filter(Analysis.user_id == user.id)
             .filter(Analysis.is_deleted == False)
+        )
+
+        total = query.count()
+        
+        analyses = (
+            query
             .order_by(Analysis.created_at.desc())
             .offset(skip)
             .limit(limit)
             .all()
         )
 
-        return [
+        items = [
             {
                 'id': str(analysis.id),
-                'original_text': analysis.original_text[:100] + '...',
-                'corrected_text': analysis.corrected_text[:100] + '...',
+                'original_text': analysis.original_text[:100] + '...' if len(analysis.original_text) > 100 else analysis.original_text,
+                'corrected_text': analysis.corrected_text[:100] + '...' if len(analysis.corrected_text) > 100 else analysis.corrected_text,
                 'mode': analysis.mode,
                 'created_at': analysis.created_at,
-                'error_count': analysis.error_count
+                'error_count': len(analysis.statistics.get('error_types', {})) if analysis.statistics else 0
             }
             for analysis in analyses
         ]
+
+        return {
+            "items": items,
+            "total": total,
+            "page": (skip // limit) + 1,
+            "page_size": limit
+        }
 
     def get_analysis(
         self,
