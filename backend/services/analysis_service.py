@@ -4,13 +4,17 @@ Text analysis service.
 Handles text analysis, correction, and history management.
 """
 
-from typing import List, Optional, Dict, Any
+import logging
 from datetime import datetime
+from typing import Any, Optional
+
 from sqlalchemy.orm import Session
 
-from models import User, Analysis, ErrorDetail, AnalysisCache
-from pipeline import AnalysisPipeline, PipelineResult
+from models import Analysis, AnalysisCache, ErrorDetail, User
+from pipeline import AnalysisPipeline
 from schemas.analysis import AnalyzeRequest, AnalyzeResponse, ErrorDetailResponse
+
+logger = logging.getLogger(__name__)
 
 
 class AnalysisService:
@@ -24,7 +28,7 @@ class AnalysisService:
         cache_ttl_hours: Cache time-to-live in hours
     """
 
-    def __init__(self, pipeline: Optional[AnalysisPipeline] = None, cache_ttl_hours: int = 24):
+    def __init__(self, pipeline: AnalysisPipeline | None = None, cache_ttl_hours: int = 24):
         """
         Initialize the analysis service.
 
@@ -35,7 +39,7 @@ class AnalysisService:
         self.pipeline = pipeline or AnalysisPipeline()
         self.cache_ttl_hours = cache_ttl_hours
 
-    def analyze(
+    async def analyze(
         self,
         request: AnalyzeRequest,
         user: Optional[User],
@@ -56,7 +60,7 @@ class AnalysisService:
             ```python
             service = AnalysisService()
             request = AnalyzeRequest(text="She don't like it.", mode="accuracy")
-            response = service.analyze(request, user, db)
+            response = await service.analyze(request, user, db)
             assert "doesn't" in response.corrected_text.lower()
             ```
 
@@ -80,11 +84,14 @@ class AnalysisService:
 
         # Run pipeline
         user_id = str(user.id) if user else None
-        pipeline_result = self.pipeline.analyze(
+        pipeline_result = await self.pipeline.analyze(
             request.text,
             request.mode,
             user_id
         )
+
+        # Log stage times for monitoring
+        logger.info(f"[ANALYSIS] Stage times: {pipeline_result.stage_times}")
 
         # Create analysis record
         analysis = Analysis(
@@ -143,6 +150,7 @@ class AnalysisService:
             errors=error_responses,
             statistics=pipeline_result.merged_result.statistics,
             processing_time_ms=pipeline_result.processing_time_ms,
+            stage_times=pipeline_result.stage_times,
             token_usage=pipeline_result.llm_result.token_usage,
             created_at=analysis.created_at
         )
@@ -158,7 +166,7 @@ class AnalysisService:
         db: Session,
         skip: int = 0,
         limit: int = 20
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Get user's analysis history.
 
@@ -178,7 +186,7 @@ class AnalysisService:
         )
 
         total = query.count()
-        
+
         analyses = (
             query
             .order_by(Analysis.created_at.desc())
@@ -211,7 +219,7 @@ class AnalysisService:
         analysis_id: str,
         user: User,
         db: Session
-    ) -> Optional[Dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         """
         Get specific analysis details.
 
@@ -293,7 +301,7 @@ class AnalysisService:
         self,
         cache_key: str,
         db: Session
-    ) -> Optional[Dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         """
         Get analysis result from cache.
 
@@ -319,7 +327,7 @@ class AnalysisService:
     def _save_to_cache(
         self,
         cache_key: str,
-        result: Dict[str, Any],
+        result: dict[str, Any],
         db: Session
     ) -> None:
         """
@@ -330,8 +338,8 @@ class AnalysisService:
             result: Result to cache
             db: Database session
         """
-        from datetime import timedelta
         import json
+        from datetime import timedelta
 
         # Convert datetime objects to ISO strings for JSON serialization
         def serialize_datetime(obj):

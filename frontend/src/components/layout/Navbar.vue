@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { RouterLink } from 'vue-router'
-import { useAuth, useUI } from '@/composables'
+import { useAuth } from '@/composables/useAuth'
+import { useUIStore } from '@/stores/uiStore'
 
 const { isAuthenticated, user, logout } = useAuth()
-const { isDarkMode } = useUI()
+const uiStore = useUIStore()
 </script>
 
 <template>
@@ -50,13 +51,13 @@ const { isDarkMode } = useUI()
             登出
           </button>
         </div>
-        <RouterLink
+        <button
           v-else
-          to="/auth"
+          @click="uiStore.openLoginModal()"
           class="px-5 py-2 rounded-lg text-white font-medium bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 transition-all hover:-translate-y-px hover:shadow-lg hover:shadow-blue-500/30"
         >
           登录
-        </RouterLink>
+        </button>
       </div>
     </div>
   </nav>

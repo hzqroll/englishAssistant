@@ -50,8 +50,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Docker + Docker Compose
 - Poetry (Python deps)
 - NPM (frontend deps)
-- In-memory caching (V1 MVP - Redis removed for simplicity)
-- Multi-LLM provider support (Zhipu AI, OpenAI, Anthropic)
+- In-memory caching (V1 MVP)
+- Multi-LLM provider support (Zhipu AI, OpenAI, Anthropic, Google Gemini)
 
 ## Core Architecture
 

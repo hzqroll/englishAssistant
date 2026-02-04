@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from core.config import settings
+from middleware.auth_middleware import AuthMiddleware
 
 # Create FastAPI application
 app = FastAPI(
@@ -27,6 +28,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Configure Auth middleware
+app.add_middleware(AuthMiddleware)
+
 
 
 @app.get("/health")

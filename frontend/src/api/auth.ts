@@ -55,7 +55,6 @@ export const authApi = {
     return apiClient.get<{
       id: string
       email: string
-      username: string
       tier: 'free' | 'paid'
       created_at: string
     }>('/auth/me')

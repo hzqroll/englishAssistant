@@ -142,7 +142,7 @@ class LLMEngine:
     Chinese-English mixing correction.
 
     Attributes:
-        model: Model name to use (default: glm-4-flash)
+        model: Model name to use (default: GLM-4.7-FlashX)
         api_key: Zhipu AI API key
         client: Zhipu AI client instance
         temperature: Sampling temperature
@@ -152,7 +152,7 @@ class LLMEngine:
 
     def __init__(
         self,
-        model: str = "glm-4-flash",
+        model: str = "GLM-4.7-FlashX",
         api_key: Optional[str] = None,
         temperature: float = 0.3,
         max_tokens: int = 2000,
@@ -181,7 +181,7 @@ class LLMEngine:
             except Exception as e:
                 raise LLMError(f"Failed to initialize Zhipu AI client: {str(e)}")
 
-    def optimize(
+    async def optimize(
         self, text: str, mode: str = "accuracy", intent: Optional[Intent] = None
     ) -> LLMResult:
         """
@@ -190,7 +190,7 @@ class LLMEngine:
         Args:
             text: Text to optimize
             mode: Optimization mode (accuracy/natural)
-            intent: Pre-detected intent (optional)
+            intent: Pre-detected intent (optional, ignored in combined mode)
 
         Returns:
             LLMResult with optimized text and metadata
@@ -198,7 +198,7 @@ class LLMEngine:
         Example:
             ```python
             engine = LLMEngine(api_key="your-key")
-            result = engine.optimize("He go to school yesterday.")
+            result = await engine.optimize("He go to school yesterday.")
             assert "went" in result.optimized_text.lower()
             ```
 
@@ -211,28 +211,108 @@ class LLMEngine:
         start_time = time.time()
 
         try:
-            detected_intent = intent or self._detect_intent(text)
-
-            if mode == "natural":
-                optimized = self._optimize_natural(text, detected_intent)
-            else:
-                optimized = self._optimize_accuracy(text, detected_intent)
-
+            # Combined prompt for single-pass processing
+            result_data = await self._optimize_combined(text, mode)
+            
             processing_time = int((time.time() - start_time) * 1000)
 
+            detected_intent = Intent(
+                text_type=TextType(result_data.get("intent", {}).get("text_type", "unknown")),
+                tone=Tone(result_data.get("intent", {}).get("tone", "neutral")),
+                speakers=result_data.get("intent", {}).get("speakers", []),
+                has_chinese=result_data.get("intent", {}).get("has_chinese", False),
+                confidence=result_data.get("intent", {}).get("confidence", 0.8),
+            )
+
             return LLMResult(
-                optimized_text=optimized,
+                optimized_text=result_data.get("optimized_text", text),
                 detected_intent=detected_intent,
-                corrections=self._extract_corrections(text, optimized, mode),
-                explanation="",
-                token_usage=self._estimate_tokens(text, optimized),
+                corrections=result_data.get("corrections", []),
+                explanation=result_data.get("explanation", ""),
+                token_usage=self._estimate_tokens(text, result_data.get("optimized_text", text)),
                 model=self.model,
                 processing_time_ms=processing_time,
-                metadata={"mode": mode},
+                metadata={"mode": mode, "method": "combined_single_pass"},
             )
 
         except Exception as e:
             raise LLMError(f"Optimization failed: {str(e)}")
+
+    async def _optimize_combined(self, text: str, mode: str) -> Dict[str, Any]:
+        """
+        Perform intent detection, optimization, and correction extraction in a single pass.
+        
+        Args:
+            text: Input text
+            mode: Optimization mode
+            
+        Returns:
+            Dictionary with all results
+        """
+        optimization_instruction = (
+            "Improve naturalness and flow while preserving meaning." 
+            if mode == "natural" 
+            else "Fix grammatical, spelling, and tense errors."
+        )
+
+        prompt = f"""
+Analyze and optimize the following English text.
+
+Text: "{text}"
+
+Task:
+1. Detect the intent (text type, tone, speakers, chinese content).
+2. {optimization_instruction}
+3. List specific corrections made.
+
+Return a JSON object with this EXACT structure:
+{{
+  "intent": {{
+    "text_type": "dialogue|email|essay|message|document|unknown",
+    "tone": "formal|informal|friendly|professional|neutral",
+    "speakers": ["speaker1", "speaker2"],
+    "has_chinese": true/false,
+    "confidence": 0.95
+  }},
+  "optimized_text": "The full optimized text here",
+  "corrections": [
+    {{
+      "original": "original phrase",
+      "corrected": "corrected phrase",
+      "type": "grammar|tense|word_choice|mixed_language|style",
+      "severity": "low|medium|high",
+      "explanation": "brief explanation"
+    }}
+  ],
+  "explanation": "Overall summary of changes"
+}}
+"""
+        
+        try:
+            # Use async call if available, otherwise wrap in executor or just call sync
+            # ZhipuAI client is sync by default, but we can check if it supports async
+            # For now, we assume the client is sync and this method is async to allow future async client
+            
+            # Note: The current ZhipuAI client is synchronous. 
+            # Ideally we should use an async client or run_in_executor.
+            # For this optimization, reducing round trips is the main gain.
+            
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": "You are an expert English language assistant."},
+                    {"role": "user", "content": prompt},
+                ],
+                temperature=0.3,
+                max_tokens=self.max_tokens,
+            )
+
+            content = response.choices[0].message.content
+            return self._parse_json_response(content)
+
+        except Exception as e:
+            raise LLMError(f"Combined optimization failed: {str(e)}")
+
 
     def _detect_intent(self, text: str) -> Intent:
         """

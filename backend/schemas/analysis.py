@@ -4,9 +4,10 @@ Analysis-related schemas.
 Pydantic models for text analysis requests and responses.
 """
 
-from pydantic import BaseModel, Field
-from typing import Optional, List, Dict, Any
 from datetime import datetime
+from typing import Any
+
+from pydantic import BaseModel, Field
 
 
 class AnalyzeRequest(BaseModel):
@@ -27,13 +28,13 @@ class AnalyzeRequest(BaseModel):
 class ErrorDetailResponse(BaseModel):
     """Single error detail."""
     error_type: str = Field(..., description="Error type")
-    error_subtype: Optional[str] = Field(None, description="Error subtype")
+    error_subtype: str | None = Field(None, description="Error subtype")
     original_span: str = Field(..., description="Original text with error")
     corrected_span: str = Field(..., description="Corrected text")
     start_index: int = Field(..., description="Start position in original text")
     end_index: int = Field(..., description="End position in original text")
-    explanation: Optional[str] = Field(None, description="Human-readable explanation")
-    rule_description: Optional[str] = Field(None, description="Technical rule description")
+    explanation: str | None = Field(None, description="Human-readable explanation")
+    rule_description: str | None = Field(None, description="Technical rule description")
     severity: str = Field(default="medium", description="Error severity (low/medium/high)")
 
     class Config:
@@ -59,10 +60,11 @@ class AnalyzeResponse(BaseModel):
     original_text: str = Field(..., description="Original input text")
     corrected_text: str = Field(..., description="Corrected text")
     mode: str = Field(..., description="Correction mode used")
-    errors: List[ErrorDetailResponse] = Field(default_factory=list, description="List of errors")
-    statistics: Dict[str, Any] = Field(default_factory=dict, description="Analysis statistics")
+    errors: list[ErrorDetailResponse] = Field(default_factory=list, description="List of errors")
+    statistics: dict[str, Any] = Field(default_factory=dict, description="Analysis statistics")
     processing_time_ms: int = Field(..., description="Processing time in milliseconds")
-    token_usage: Dict[str, Any] = Field(default_factory=dict, description="Token usage statistics")
+    stage_times: dict[str, int] = Field(default_factory=dict, description="Time taken for each stage in ms")
+    token_usage: dict[str, Any] = Field(default_factory=dict, description="Token usage statistics")
     created_at: datetime = Field(..., description="Analysis timestamp")
 
     class Config:

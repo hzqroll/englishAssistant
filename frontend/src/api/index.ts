@@ -47,6 +47,11 @@ apiClient.interceptors.response.use(
 
     // Handle 401 errors - token expired
     if (error.response?.status === 401 && !originalRequest._retry) {
+      // Prevent infinite loop if the refresh request itself fails
+      if (originalRequest.url?.includes('/auth/refresh')) {
+        return Promise.reject(error)
+      }
+
       originalRequest._retry = true
 
       try {

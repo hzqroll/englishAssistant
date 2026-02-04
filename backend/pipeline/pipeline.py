@@ -124,7 +124,7 @@ class AnalysisPipeline:
         self.enable_caching = enable_caching
         self.enable_llm = enable_llm and bool(self.llm_engine)
 
-    def analyze(
+    async def analyze(
         self, text: str, mode: str = "accuracy", user_id: Optional[str] = None
     ) -> PipelineResult:
         """
@@ -141,7 +141,7 @@ class AnalysisPipeline:
         Example:
             ```python
             pipeline = AnalysisPipeline()
-            result = pipeline.analyze("She don't like apples.")
+            result = await pipeline.analyze("She don't like apples.")
             print(result.corrected_text)  # "She doesn't like apples."
             ```
 
@@ -167,7 +167,7 @@ class AnalysisPipeline:
             if self.enable_llm:
                 stage_start = time.time()
                 try:
-                    llm_result = self.llm_engine.optimize(
+                    llm_result = await self.llm_engine.optimize(
                         text, mode, preprocessed.metadata.get("intent")
                     )
                     stage_times["llm"] = int((time.time() - stage_start) * 1000)
@@ -275,7 +275,7 @@ class AnalysisPipeline:
             metadata={"mode": "rule_only"},
         )
 
-    def analyze_batch(
+    async def analyze_batch(
         self, texts: list, mode: str = "accuracy", user_id: Optional[str] = None
     ) -> list:
         """
@@ -292,7 +292,7 @@ class AnalysisPipeline:
         # TODO: Implement batch processing with parallelization
         results = []
         for text in texts:
-            result = self.analyze(text, mode, user_id)
+            result = await self.analyze(text, mode, user_id)
             results.append(result)
         return results
 

@@ -38,6 +38,7 @@ export const useAuthStore = defineStore('auth', () => {
       user.value = {
         id: response.data.user_id,
         email: response.data.email,
+        username: response.data.email.split('@')[0], // Default username from email
         tier: response.data.tier,
         createdAt: new Date().toISOString(),
       }
@@ -68,6 +69,7 @@ export const useAuthStore = defineStore('auth', () => {
       user.value = {
         id: response.data.user_id,
         email: response.data.email,
+        username: username || email.split('@')[0],
         tier: response.data.tier,
         createdAt: new Date().toISOString(),
       }
@@ -99,6 +101,7 @@ export const useAuthStore = defineStore('auth', () => {
       user.value = {
         id: response.data.id,
         email: response.data.email,
+        username: response.data.email.split('@')[0],
         tier: response.data.tier,
         createdAt: response.data.created_at,
       }

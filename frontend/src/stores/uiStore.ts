@@ -13,6 +13,7 @@ export const useUIStore = defineStore('ui', () => {
   const isDarkMode = ref(false)
   const toasts = ref<ToastMessage[]>([])
   const sidebarOpen = ref(true)
+  const isLoginModalOpen = ref(false)
 
   // Computed
   const uiState = computed<UIState>(() => ({
@@ -22,6 +23,15 @@ export const useUIStore = defineStore('ui', () => {
     toasts: toasts.value,
     sidebarOpen: sidebarOpen.value,
   }))
+
+  // Modal actions
+  function openLoginModal() {
+    isLoginModalOpen.value = true
+  }
+
+  function closeLoginModal() {
+    isLoginModalOpen.value = false
+  }
 
   // Panel actions
   function togglePanel(panel: PanelType) {
@@ -121,6 +131,7 @@ export const useUIStore = defineStore('ui', () => {
     isDarkMode,
     toasts,
     sidebarOpen,
+    isLoginModalOpen,
     uiState,
     togglePanel,
     setPanelState,
@@ -134,5 +145,7 @@ export const useUIStore = defineStore('ui', () => {
     clearToasts,
     toggleSidebar,
     setSidebarState,
+    openLoginModal,
+    closeLoginModal,
   }
 })

@@ -86,7 +86,7 @@ async def analyze_text(
 
         # Perform analysis
         service = get_analysis_service()
-        response = service.analyze(request, user, db)
+        response = await service.analyze(request, user, db)
 
         logger.info(f"[ANALYZE] Analysis complete - errors found: {len(response.errors)}")
 
