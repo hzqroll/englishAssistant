@@ -1,7 +1,5 @@
 # Function Split Feature Implementation Plan
 
-> **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
-
 **Goal:** Implement sequential analysis with LanguageTool (fast, free) and optional LLM optimization (costly, AI-powered) with learning recommendations
 
 **Architecture:** Split the current 4-stage pipeline into two sequential phases:
@@ -12,1771 +10,427 @@
 
 ---
 
-## Prerequisites
+## Plan (v2, Goal-First / End-to-End Accurate)
 
-**Read these docs first:**
-- `docs/plans/2026-02-05-function-split-design.md` - Complete design specification
-- `backend/pipeline/pipeline.py` - Current pipeline implementation (existing)
-- `backend/pipeline/rule_engine.py` - LanguageTool integration
-- `backend/pipeline/llm_engine.py` - LLM integration
+这份计划以“更准确完成目标”为第一优先级（即便重构量变大也接受），并以端到端可用为准绳。
 
-**IMPORTANT ADAPTATIONS:**
-- **NEW FILE**: Create `backend/pipeline/analysis_pipeline.py` (new split analysis pipeline)
-- **UUID Primary Keys**: All models use UUID, not Integer (use `str(uuid)` conversions)
-- **Type Naming**: Use `LLMMoreDetailResult` to avoid conflict with existing `LLMResult` in llm_engine.py
-- **ErrorDetail**: Extend existing model with new fields `rule_id`, `category`, `original_text`, `correction`, `message`, `context`
-- **Analysis Model**: Add `status`, `llm_tokens_used`, `llm_cost_usd` to existing model (not create new file)
+### Target Outcomes（按目标验收）
 
-**Frontend is already complete:**
-- `frontend/src/components/panels/RuleEnginePanel.vue` - Displays LT results
-- `frontend/src/components/panels/LLMPanel.vue` - Displays LLM results
-- `frontend/src/components/panels/AIOptimizeButton.vue` - Floating trigger button
-- `frontend/src/stores/types.ts` - TypeScript interfaces defined
-- `frontend/src/api/analysis.ts` - API client methods ready
+1. **两阶段体验**
+   - Phase 1（免费/快速）：只跑 Preprocess + LanguageTool，**2–4 秒**返回规则修正结果与错误列表。
+   - Phase 2（可选/付费）：用户触发后，对 **Phase 1 的 analysis_id** 进行 LLM 优化，并返回学习建议/错误模式总结。
+
+2. **一致性与可追溯**
+   - Phase 2 使用与 Phase 1 同一条 Analysis 记录（同一个 analysis_id），并能避免重复优化（幂等/状态机）。
+   - 能对 LLM 调用做配额/限流与成本记录（复用现有 RateLimitService 的体系）。
+
+3. **学习建议**
+   - LLM 输出包含可直接渲染的 learning_analysis（错误模式、学习建议、tips，可选历史趋势）。
+   - LLM 异常时降级：仍返回 Phase 1 结果，并明确 learning_analysis 缺失或为空。
+
+### Hard Decisions（为确保端到端可用必须明确）
+
+1. **匿名用户策略（必须二选一）**
+   - 方案 A（推荐，简单且安全）：Phase 2 **仅允许登录用户**（anonymous 只能 Phase 1）。
+   - 方案 B：匿名也可 Phase 2，需要引入 `requester_id`（如 cookie/session id）并将其写入 Analysis，用于所有权校验与限流键。
+
+2. **学习建议落库方式（建议分阶段）**
+   - v1（推荐）：learning_analysis 作为 JSON 存入 `ea_analyses.statistics`（或新增 `learning_insights` JSONB 字段）。
+   - v2：如需要做统计看板/长期趋势，再拆分独立表（避免一开始就做复杂 schema）。
+
+### API Contract（建议保持与现有风格一致）
+
+为了让前后端对齐更稳定，建议使用 Pydantic schema 定义强类型响应，而不是 `success/data` 的弱类型包装（现有 `/analyze` 即如此）。
+
+1. `POST /api/v1/analyze/rules-only`
+   - Request: `text`, `mode`, 可选 `language`（用于 RuleEngine 初始化）
+   - Response: `analysis_id`, `original_text`, `corrected_text`, `errors`, `statistics`, `processing_time_ms`, `stage_times`, `created_at`, `estimated_llm_tokens`, `status`
+
+2. `POST /api/v1/analyze/optimize-llm`
+   - Request: `analysis_id`
+   - Response: `analysis_id`, `optimized_text`, `suggestions/corrections`, `learning_analysis`, `token_usage`, `processing_time_ms`, `status`
+
+### Data Model（最小改动但满足目标）
+
+1. `ea_analyses`（Analysis）
+   - 新增：`status`（`rule_only|llm_running|llm_completed|failed`）
+   - 可选新增：`llm_cost_usd`（若不想只放 token_usage 里）
+   - 建议：将 `estimated_llm_tokens`、`learning_analysis` 放进 `statistics`（JSONB）以减少字段爆炸
+   - 若支持匿名 Phase 2：新增 `requester_id`（String，既可放 `anon:<id>` 也可放 `user:<uuid>`）
+
+2. `ea_error_details`（ErrorDetail）
+   - 扩展字段用于对齐 LanguageTool：`rule_id`, `category`, `message`, `context`
+   - 原有字段继续作为主通道：`error_type/error_subtype/original_span/corrected_span/start_index/end_index/severity/...`
+
+3. LLM 学习建议（Learning）
+   - v1：不新增表，直接 JSON 落 `analysis.statistics["learning_analysis"]`
+
+### Concrete Specs（字段定义 + 状态机 + 鉴权）
+
+#### Decision Defaults（本计划默认采用）
+
+1. **匿名策略：采用方案 A**
+   - `POST /analyze/rules-only`：允许匿名（user_id=NULL）
+   - `POST /analyze/optimize-llm`：仅允许登录用户（需要 current_user），匿名请求直接 401
+   - 这能把“所有权校验 + 成本控制”做得最可靠，且避免引入 requester_id/cookie/session 的复杂度
+
+2. **学习建议落库：采用 v1（JSON）**
+   - 不新增 LearningRecommendation/UserErrorTrend 表
+   - learning_analysis 存入 `ea_analyses.statistics["learning_analysis"]`
+
+如果后续必须支持匿名 Phase 2，再追加方案 B（见本节末尾 “Anonymous Phase 2 (Optional)”）。
+
+#### Analysis 字段定义（SQLAlchemy）
+
+在 `backend/models/analysis.py` 的 `Analysis` 增加：
+
+```python
+status = Column(String(20), nullable=False, default="rule_only", index=True)
+```
+
+可选（仅当你想把成本从 token_usage 中拆出）：
+
+```python
+llm_cost_usd = Column(DECIMAL(10, 4), nullable=False, default=0)
+```
+
+建议以 JSON 的方式扩展统计（写入 `statistics` / `token_usage`），避免字段膨胀：
+
+- `statistics["estimated_llm_tokens"]`: int
+- `statistics["rule_only"]`: dict（例如 sentence_count、word_count、error_types）
+- `statistics["learning_analysis"]`: dict（Phase 2 写入）
+- `token_usage`: 保持现有结构，Phase 1 写 `{}` 或 `{total_tokens: 0, estimated_cost: 0.0}`；Phase 2 写入 LLMEngine 返回值
+
+#### ErrorDetail 字段定义（SQLAlchemy）
+
+在 `backend/models/analysis.py` 的 `ErrorDetail` 增加（均 nullable）：
+
+```python
+rule_id = Column(String(100), index=True)
+category = Column(String(50), index=True)
+message = Column(Text)
+context = Column(Text)
+```
+
+映射规则（Phase 1 写入）：
+- `rule_id` ← `GrammarError.metadata["rule_id"]`
+- `category` ← `GrammarError.metadata["category"]`
+- `message` ← `GrammarError.explanation`（LanguageTool 的 match.message）
+- `context` ← `GrammarError.metadata["context"]`
+
+#### Status Machine（幂等 + 并发保护）
+
+建议状态枚举（字符串即可，不强制 Enum）：
+- `rule_only`: Phase 1 已完成，等待可选 Phase 2
+- `llm_running`: Phase 2 已开始（用于并发保护）
+- `llm_completed`: Phase 2 已完成
+- `failed`: Phase 2 失败（可允许重试或不允许，见下）
+
+转移规则：
+- Phase 1 完成：`None` → `rule_only`
+- Phase 2 开始：`rule_only` → `llm_running`（先 commit，防止双击触发重复扣费）
+- Phase 2 成功：`llm_running` → `llm_completed`
+- Phase 2 失败：`llm_running` → `failed`（并写入 `statistics["llm_error"]` 或 `token_usage["error"]`）
+
+重复调用处理（建议）：
+- `llm_running`：返回 409（“正在优化中”）
+- `llm_completed`：返回 409（“已优化，无需重复”）
+- `failed`：允许重试则置回 `llm_running`；不允许则 409
+
+#### Ownership & Auth（必须落到代码里）
+
+默认方案 A（仅登录用户可 Phase 2）：
+- `rules-only`：`current_user` 可选；Analysis.user_id 写入 user_id 或 NULL
+- `optimize-llm`：必须 `current_user` 存在，否则 401
+- `optimize-llm` 查到 Analysis 后必须满足：`analysis.user_id == current_user.id`，否则 403
+
+#### Rate Limit（成本可控的最小实现）
+
+复用现有 `RateLimitService`：
+- Phase 1：可做轻量 daily quota（tokens_used=0，cost=0），重点防滥用
+- Phase 2：以 `LLMResult.token_usage["total_tokens"]` 为 tokens_used，并 track_usage（estimated_cost 可按模型价格算或先置 0）
+
+#### LLM 输出结构（Combined Prompt 一次性返回）
+
+建议 LLM 在 `llm_engine._optimize_combined` 的 JSON 结构里新增：
+
+```json
+{
+  "intent": { "...": "..." },
+  "optimized_text": "...",
+  "corrections": [{ "...": "..." }],
+  "explanation": "...",
+  "learning_analysis": {
+    "error_patterns": [
+      { "pattern_name": "...", "frequency": "43%", "examples": [{"original":"...","corrected":"..."}], "severity": "high" }
+    ],
+    "ea_learning_recommendations": [
+      { "priority": 1, "topic": "...", "description": "...", "resources": [{"type":"grammar_rule","title":"...","content":"..."}], "estimated_study_time": "30 minutes" }
+    ],
+    "personalized_tips": ["..."]
+  }
+}
+```
+
+服务层写入：
+- `analysis.corrected_text = optimized_text`（或按合并策略写）
+- `analysis.token_usage = llm_result.token_usage`
+- `analysis.statistics["learning_analysis"] = learning_analysis`
+
+#### Anonymous Phase 2 (Optional, 方案 B)
+
+只有当“匿名也必须 Phase 2”时才做：
+- Analysis 增加 `requester_id = Column(String(100), nullable=False, index=True)`
+- Phase 1 匿名请求：`requester_id = "anon:" + <stable_id>`（cookie 或签名 token）
+- Phase 2：要求请求携带同一个 stable_id，校验 `analysis.requester_id` 相等，否则 403
+- RateLimitService 的 user_id 改为 requester_id（避免只用 IP）
 
 ---
 
-## Task 1: Add New Type Definitions
+## Task List (v2, Replace Task 1-12)
+
+### Task 1: Define Schemas & Contracts
+
+**Goal:** 把 Phase 1/2 的输入输出定成“可测试/可演进”的强类型协议。
 
 **Files:**
-- Create: `backend/models/types.py`
+- Modify: `backend/schemas/analysis.py`（或新建 `backend/schemas/split_analysis.py`，二选一）
 
-**Step 1: Add new dataclass types**
+**Steps:**
+1. 在 schema 中新增以下 Pydantic models（沿用现有 `AnalyzeRequest/AnalyzeResponse` 的风格与字段命名）：
+   - `RulesOnlyRequest`
+     - `text: str`（min_length=1, max_length=10000）
+     - `mode: str`（默认 "accuracy"，与现有 `Analysis.validate_mode` 对齐）
+     - `language: str | None`（默认 "en-US"，用于 RuleEngine 初始化；不传则使用默认）
+   - `RulesOnlyResponse`
+     - `analysis_id: str`
+     - `original_text: str`
+     - `corrected_text: str`
+     - `mode: str`
+     - `status: str`（"rule_only"）
+     - `errors: list[ErrorDetailResponse]`（复用现有 ErrorDetailResponse）
+     - `statistics: dict[str, Any]`（至少包含 `total_errors`, `error_types`, `estimated_llm_tokens`）
+     - `processing_time_ms: int`
+     - `stage_times: dict[str, int]`
+     - `created_at: datetime`
+   - `OptimizeLLMRequest`
+     - `analysis_id: str`（UUID string）
+   - `OptimizeLLMResponse`
+     - `analysis_id: str`
+     - `original_text: str`
+     - `corrected_text: str`（Phase 2 后最终文本；可直接取 LLM optimized_text）
+     - `mode: str`
+     - `status: str`（"llm_completed"）
+     - `token_usage: dict[str, Any]`（沿用 `AnalyzeResponse` 的 token_usage 结构）
+     - `statistics: dict[str, Any]`（包含 `learning_analysis`）
+     - `processing_time_ms: int`
+     - `stage_times: dict[str, int]`
+     - `created_at: datetime`
+2. 新增 `LearningAnalysis` 的 schema（仅用于响应与 statistics 存储的结构约定）：
+   - `error_patterns: list[...]`
+   - `ea_learning_recommendations: list[...]`
+   - `personalized_tips: list[str]`
+   - 可选 `historical_trend`
+3. 明确错误码与返回约定（写在 schema 附近或本节末）：
+   - Phase 1：参数校验失败 422（FastAPI 自动）
+   - Phase 2：未登录 401；不属于当前用户 403；analysis_id 不存在 404；状态不允许 409
 
-```python
-# backend/models/types.py
+**Acceptance:**
+- 前后端可以依赖 schema 完成类型对齐，不再需要 `success/data` 弱类型包装。
+- 两个 endpoint 的响应字段足以渲染 Rule 面板与 LLM 面板（errors + corrected_text + learning_analysis + token_usage）。
 
-from dataclasses import dataclass, field
-from typing import List, Dict, Any, Optional
-from datetime import datetime
+### Task 2: Extend DB Models + Migration
 
-@dataclass
-class LTError:
-    """LanguageTool error detail"""
-    rule_id: str
-    category: str  # GRAMMAR, TYPOS, PUNCTUATION, etc.
-    severity: str  # ERROR, WARNING
-    position_start: int
-    position_end: int
-    original_text: str
-    replacements: List[str]
-    message: str
-    context: str
-
-@dataclass
-class RuleBasedStatistics:
-    """Statistics from rule-based analysis"""
-    total_errors: int
-    by_category: Dict[str, int]
-
-@dataclass
-class RuleBasedResult:
-    """Result from LanguageTool-only analysis"""
-    analysis_id: str
-    errors: List[LTError]
-    corrected_text: str
-    statistics: RuleBasedStatistics
-    processing_time_ms: int
-    estimated_llm_tokens: int
-
-@dataclass
-class ErrorPattern:
-    """Error pattern for learning analysis"""
-    pattern_name: str
-    frequency: str  # "43%"
-    examples: List[Dict[str, str]]
-    severity: str  # high, medium, low
-
-@dataclass
-class LearningResource:
-    """Learning resource recommendation"""
-    type: str  # grammar_rule, practice_exercise
-    title: str
-    content: Optional[str] = None
-    difficulty: Optional[str] = None
-
-@dataclass
-class LearningRecommendation:
-    """Personalized learning recommendation"""
-    priority: int
-    topic: str
-    description: str
-    resources: List[LearningResource]
-    estimated_study_time: str
-
-@dataclass
-class HistoricalTrend:
-    """User's historical error trend"""
-    comparison: str  # improving, stable, worsening
-    since_last_week: str
-    most_improved: str
-    needs_attention: str
-
-@dataclass
-class LearningAnalysis:
-    """Complete learning analysis from LLM"""
-    error_patterns: List[ErrorPattern]
-    ea_learning_recommendations: List[LearningRecommendation]
-    personalized_tips: List[str]
-    historical_trend: Optional[HistoricalTrend] = None
-
-@dataclass
-class LLMSuggestion:
-    """Single LLM optimization suggestion"""
-    type: str  # naturalness, style_variant, etc.
-    sentence_index: int
-    original: str
-    suggestion: str
-    explanation: str
-    confidence: float
-
-@dataclass
-class ChineseCorrection:
-    """Chinese-English mixing correction"""
-    original: str
-    corrected: str
-
-@dataclass
-class LLMMoreDetailResult:
-    """Result from LLM optimization (renamed to avoid conflict with existing LLMResult)"""
-    optimized_text: str
-    suggestions: List[LLMSuggestion]
-    chinese_corrections: List[ChineseCorrection]
-    learning_analysis: LearningAnalysis
-    token_usage: int
-```
-
-**Step 2: Run type check**
-
-Run: `cd backend && poetry run mypy models/types.py`
-Expected: No errors (may have unused import warnings, that's OK)
-
-**Step 3: Commit**
-
-```bash
-git add backend/models/types.py
-git commit -m "feat(types): add dataclasses for split analysis feature"
-```
-
----
-
-## Task 2: Update Database Models
+**Goal:** 支持状态机、LT 细节、（可选）学习建议持久化与匿名所有权。
 
 **Files:**
-- Modify: `backend/models/analysis.py` (extend existing Analysis model)
-- Modify: `backend/models/analysis.py` (extend existing ErrorDetail model)
-- Create: `backend/models/learning_recommendation.py` (new model)
-- Create: `backend/models/user_error_trend.py` (new model)
+- Modify: `backend/models/analysis.py`
+- Create migration via Alembic
 
-**Step 1: Add split analysis fields to existing Analysis model**
+**Steps:**
+1. 在 `Analysis` 增加字段：
+   - `status: String(20)`（nullable=False，default="rule_only"，index=True）
+   - 可选：`llm_cost_usd: DECIMAL(10, 4)`（nullable=False，default=0）
+   - 若采用 Anonymous Phase 2（方案 B）：`requester_id: String(100)`（nullable=False，index=True）
+2. 在 `ErrorDetail` 增加字段（nullable=True）：
+   - `rule_id: String(100)`（index=True）
+   - `category: String(50)`（index=True）
+   - `message: Text`
+   - `context: Text`
+3. 生成并审阅 Alembic migration：
+   - `ALTER TABLE ea_analyses ADD COLUMN status ...`
+   - `ALTER TABLE ea_error_details ADD COLUMN rule_id/category/message/context ...`
+   - 若引入 requester_id 或 llm_cost_usd：对应的 ALTER TABLE
+4. 执行 upgrade/downgrade 验证 migration 可逆。
 
-```python
-# backend/models/analysis.py - Add to existing Analysis class
+**Acceptance:**
+- 新增列已在数据库中存在并能正常读写。
+- 不破坏现有 `/analyze` 的落库逻辑（旧字段仍可用）。
 
-from sqlalchemy import Column, String, Integer, DECIMAL
-from sqlalchemy.dialects.postgresql import UUID
+### Task 3: Implement Phase 1 (Rules-Only) Service Method
 
-class Analysis(Base, TimestampMixin, SoftDeleteMixin):
-    # ... existing fields ...
-
-    # Add these new fields for split analysis
-    status = Column(String(20), default='rule_only', nullable=False)  # 'rule_only', 'completed', 'failed'
-    llm_tokens_used = Column(Integer, default=0, nullable=False)
-    llm_cost_usd = Column(DECIMAL(10, 4), default=0)
-```
-
-**Step 2: Extend existing ErrorDetail model**
-
-```python
-# backend/models/analysis.py - Add new fields to existing ErrorDetail class
-
-class ErrorDetail(Base):
-    __tablename__ = 'ea_error_details'
-
-    # ... existing fields (id, analysis_id, error_type, error_subtype, original_span,
-    #                       corrected_span, start_index, end_index, etc.) ...
-
-    # Add these new fields for LanguageTool details
-    rule_id = Column(String(100))  # LanguageTool rule_id (e.g., "EN_CONTRACTION_GOT_IT")
-    category = Column(String(50))  # LanguageTool category (GRAMMAR, TYPOS, etc.)
-    message = Column(Text)  # LanguageTool error message
-    context = Column(Text)  # Context surrounding the error
-
-    # Keep existing fields for backward compatibility
-    # error_type maps to category for UI display
-    # original_span maps to original_text
-    # corrected_span maps to correction
-```
-
-**Step 3: Create LearningRecommendation model**
-
-```python
-# backend/models/learning_recommendation.py
-
-from sqlalchemy import Column, String, Integer, Text, ForeignKey, DateTime, DECIMAL, JSONB
-from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import relationship
-from datetime import datetime
-
-from .base import Base
-
-class LearningRecommendation(Base):
-    __tablename__ = 'ea_learning_recommendations'
-
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    user_id = Column(UUID(as_uuid=True), ForeignKey('ea_users.id', ondelete='CASCADE'), nullable=True)
-    analysis_id = Column(UUID(as_uuid=True), ForeignKey('ea_analyses.id', ondelete='CASCADE'), nullable=True)
-    pattern_name = Column(String(200))
-    frequency = Column(DECIMAL(5, 2))  # Percentage as decimal
-    severity = Column(String(20))  # high, medium, low
-    recommendation = Column(Text)
-    resources = Column(JSONB)  # Store as JSON
-    priority = Column(Integer)
-    estimated_study_time = Column(String(50))
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-
-    # Relationships
-    user = relationship("User")
-    analysis = relationship("Analysis")
-```
-
-**Step 4: Create UserErrorTrend model**
-
-```python
-# backend/models/user_error_trend.py
-
-from sqlalchemy import Column, String, Integer, ForeignKey, DateTime, UniqueConstraint
-from sqlalchemy.orm import relationship
-from datetime import datetime
-
-from .base import Base
-
-class UserErrorTrend(Base):
-    __tablename__ = 'ea_user_error_trends'
-
-    id = Column(Integer, primary_key=True)
-    user_id = Column(Integer, ForeignKey('ea_users.id', ondelete='CASCADE'))
-    pattern_name = Column(String(200))
-    error_count = Column(Integer, default=0)
-    trend_direction = Column(String(20))  # improving, stable, worsening
-    last_calculated = Column(DateTime, default=datetime.utcnow)
-
-    # Relationships
-    user = relationship("User")
-
-    __table_args__ = (
-        UniqueConstraint('user_id', 'pattern_name', name='unique_user_pattern'),
-    )
-```
-
-**Step 5: Add relationships to Analysis model**
-
-```python
-# In backend/models/analysis.py, add to existing Analysis class relationships:
-
-# Add to existing relationships section (after line 96)
-ea_learning_recommendations = relationship(
-    "LearningRecommendation",
-    back_populates="analysis",
-    cascade="all, delete-orphan"
-)
-```
-
-**Step 6: Run type check**
-
-Run: `cd backend && poetry run mypy models/`
-Expected: No critical errors
-
-**Step 7: Create migration**
-
-Run: `cd backend && poetry run alembic revision --autogenerate -m "add split analysis fields and tables"`
-
-**Step 8: Review generated migration**
-
-Check: `backend/alembic/versions/<newest_file>.py`
-Ensure it has:
-- ALTER TABLE ea_analyses ADD COLUMN status, llm_tokens_used, llm_cost_usd
-- ALTER TABLE ea_error_details ADD COLUMN rule_id, category, message, context
-- CREATE TABLE ea_learning_recommendations
-- CREATE TABLE ea_user_error_trends
-
-**Step 9: Commit**
-
-```bash
-git add backend/models/ backend/alembic/versions/
-git commit -m "feat(models): add status field and new tables for split analysis"
-```
-
----
-
-## Task 3: Implement analyze_rules_only in Pipeline
+**Goal:** 只跑 Preprocess + RuleEngine，落库并返回 UI 所需信息。
 
 **Files:**
-- Create: `backend/pipeline/analysis_pipeline.py` (NEW FILE - separate from existing pipeline.py)
+- Modify: `backend/services/analysis_service.py`
+- (Optional) Modify: `backend/pipeline/pipeline.py`（补齐 rule-only result 的 TODO，以便统计结构稳定）
 
-**Step 1: Add import for new types**
+**Steps:**
+1. 在 `AnalysisService` 新增方法 `analyze_rules_only(request, user, db)`（签名与现有 `analyze()` 类似）：
+   - 取 `text/mode/language`
+   - 记录 `stage_times`
+2. Phase 1 执行流程（建议与现有 pipeline 对齐）：
+   - Stage preprocessing：`Preprocessor().preprocess(text)`（可选；仅用于 stage_times/metadata）
+   - Stage rule_engine：`RuleEngine(language=language).check(text)`
+   - 生成 `corrected_text`：复用 `AnalysisPipeline._apply_rule_corrections(text, errors)`
+3. 估算 tokens（写入 `statistics["estimated_llm_tokens"]`）：
+   - 使用 LLMEngine 当前的 token 估算思路或简单规则（与 v2 Concrete Specs 一致即可）
+4. 落库（同步 SQLAlchemy Session）：
+   - 创建 `Analysis`：
+     - `user_id = user.id if user else None`
+     - `original_text = text`
+     - `corrected_text = corrected_text`
+     - `mode = request.mode`
+     - `statistics` 至少包含：`total_errors`, `error_types`, `estimated_llm_tokens`
+     - `token_usage = {}` 或 `{"total_tokens": 0, "estimated_cost": 0.0}`
+     - `processing_time_ms`
+     - `status = "rule_only"`
+   - 循环写入 `ErrorDetail`：
+     - 核心字段来自 `GrammarError.to_dict()` 与 `GrammarError.metadata`
+     - `message` 建议取 `GrammarError.explanation`
+5. 返回 `RulesOnlyResponse`（schema 由 Task 1 定义）：
+   - `analysis_id=str(analysis.id)`，errors 使用现有 `ErrorDetailResponse`
 
-```python
-# backend/pipeline/analysis_pipeline.py
+**Acceptance:**
+- rules-only 请求能在 2–4 秒内返回并落库（含 errors 与 status）。
+- `ErrorDetail.rule_id/category/context/message` 能从 LanguageTool 信息正确填充（来源是 `GrammarError.metadata`）。
 
-from models.types import (
-    RuleBasedResult,
-    LTError,
-    RuleBasedStatistics,
-    LLMMoreDetailResult,
-    LearningAnalysis
-)
-```
+### Task 4: Implement Phase 2 (Optimize) Service Method
 
-**Step 2: Add token estimation helper**
-
-```python
-# In AnalysisPipeline class
-
-def _estimate_llm_tokens(self, text: str) -> int:
-    """
-    Estimate LLM token consumption
-
-    Rule: ~1 token = 4 characters (English) + 500 tokens system prompt
-    """
-    char_count = len(text)
-    base_tokens = char_count // 4
-    system_tokens = 500
-    return base_tokens + system_tokens
-```
-
-**Step 3: Add calculate_statistics helper**
-
-```python
-# In AnalysisPipeline class
-
-def _calculate_statistics(self, errors: List[LTError]) -> RuleBasedStatistics:
-    """Calculate error statistics by category"""
-    by_category = {}
-    for error in errors:
-        category = error.category
-        by_category[category] = by_category.get(category, 0) + 1
-
-    return RuleBasedStatistics(
-        total_errors=len(errors),
-        by_category=by_category
-    )
-```
-
-**Step 4: Add convert_lt_errors helper**
-
-```python
-# In AnalysisPipeline class
-
-def _convert_lt_errors(self, lt_matches: List) -> List[LTError]:
-    """Convert LanguageTool matches to LTError objects"""
-    errors = []
-    for match in lt_matches:
-        errors.append(LTError(
-            rule_id=match.ruleId,
-            category=match.category,
-            severity=match.ruleIssueType,
-            position_start=match.offset,
-            position_end=match.offset + match.errorLength,
-            original_text=match.context[match.offset:match.offset + match.errorLength],
-            replacements=match.replacements[:3],  # Top 3 suggestions
-            message=match.message,
-            context=match.context
-        ))
-    return errors
-```
-
-**Step 5: Implement analyze_rules_only method**
-
-```python
-# In AnalysisPipeline class, after the existing analyze method
-
-async def analyze_rules_only(
-    self,
-    text: str,
-    mode: CorrectionMode,
-    user_id: Optional[UUID] = None,
-    session: AsyncSession = None
-) -> RuleBasedResult:
-    """
-    Fast analysis using LanguageTool only
-
-    Returns RuleBasedResult with analysis_id for optional LLM optimization later
-    """
-    start_time = time.time()
-
-    # Stage 1: Preprocessing
-    preprocessed = await self.preprocessor.preprocess(text)
-
-    # Stage 2: LanguageTool check
-    rule_result = await self.rule_engine.check(preprocessed, mode)
-
-    # Convert errors
-    lt_errors = self._convert_lt_errors(rule_result.errors)
-
-    # Calculate statistics
-    statistics = self._calculate_statistics(lt_errors)
-
-    # Save to database (status='rule_only')
-    from sqlalchemy import select
-    from models.analysis import Analysis
-
-    analysis = Analysis(
-        user_id=user_id,
-        original_text=text,
-        corrected_text=rule_result.corrected_text,
-        mode=mode.value,
-        status='rule_only',
-        processing_time_ms=int((time.time() - start_time) * 1000)
-    )
-
-    session.add(analysis)
-    await session.flush()  # Get the ID without committing
-
-    # Save error details
-    from models.error_detail import ErrorDetail
-
-    for error in lt_errors:
-        error_detail = ErrorDetail(
-            analysis_id=analysis.id,
-            rule_id=error.rule_id,
-            category=error.category,
-            severity=error.severity,
-            position_start=error.position_start,
-            position_end=error.position_end,
-            original_text=error.original_text,
-            correction=error.replacements[0] if error.replacements else None,
-            message=error.message,
-            context=error.context
-        )
-        session.add(error_detail)
-
-    await session.commit()
-
-    # Estimate LLM tokens
-    estimated_tokens = self._estimate_llm_tokens(text)
-
-    return RuleBasedResult(
-        analysis_id=str(analysis.id),  # UUID to string
-        errors=lt_errors,
-        corrected_text=rule_result.corrected_text,
-        statistics=statistics,
-        processing_time_ms=int((time.time() - start_time) * 1000),
-        estimated_llm_tokens=estimated_tokens
-    )
-```
-
-**Step 6: Run type check**
-
-Run: `cd backend && poetry run mypy pipeline/analysis_pipeline.py`
-Expected: No critical errors
-
-**Step 7: Commit**
-
-```bash
-git add backend/pipeline/analysis_pipeline.py
-git commit -m "feat(pipeline): add analyze_rules_only method"
-```
-
----
-
-## Task 4: Implement LLM Learning Analysis
+**Goal:** 根据 analysis_id 执行 LLM，并更新同一条 Analysis，写入 learning_analysis。
 
 **Files:**
-- Modify: `backend/pipeline/llm_engine.py`
-
-**Step 1: Add imports**
-
-```python
-# backend/pipeline/llm_engine.py
-
-from models.types import (
-    LearningAnalysis,
-    ErrorPattern,
-    LearningRecommendation,
-    LearningResource,
-    HistoricalTrend
-)
-```
-
-**Step 2: Add error pattern extraction helper**
-
-```python
-# In LLMEngine class
-
-def _extract_error_patterns(self, lt_errors: List) -> List[ErrorPattern]:
-    """Extract error patterns from LanguageTool errors"""
-    from collections import Counter
-
-    # Group by rule_id
-    rule_groups = {}
-    for error in lt_errors:
-        rule_id = error.rule_id
-        if rule_id not in rule_groups:
-            rule_groups[rule_id] = []
-        rule_groups[rule_id].append(error)
-
-    # Calculate frequencies
-    total = len(lt_errors)
-    patterns = []
-
-    for rule_id, errors in rule_groups.items():
-        frequency = f"{int((len(errors) / total) * 100)}%"
-
-        # Determine severity based on frequency
-        freq_percent = (len(errors) / total) * 100
-        if freq_percent >= 40:
-            severity = "high"
-        elif freq_percent >= 20:
-            severity = "medium"
-        else:
-            severity = "low"
-
-        # Get examples (max 3)
-        examples = [
-            {
-                "original": e.original_text,
-                "corrected": e.replacements[0] if e.replacements else ""
-            }
-            for e in errors[:3]
-        ]
-
-        # Pattern name from rule_id or category
-        pattern_name = f"{errors[0].category} Error ({rule_id})"
-
-        patterns.append(ErrorPattern(
-            pattern_name=pattern_name,
-            frequency=frequency,
-            examples=examples,
-            severity=severity
-        ))
-
-    # Sort by frequency (high to low)
-    patterns.sort(key=lambda p: int(p.frequency.rstrip('%')), reverse=True)
-
-    return patterns[:5]  # Top 5 patterns
-```
-
-**Step 3: Add historical trend analysis helper**
-
-```python
-# In LLMEngine class
-
-async def _analyze_historical_trends(
-    self,
-    session: AsyncSession,
-    user_id: Optional[int],
-    days: int = 30
-) -> Optional[HistoricalTrend]:
-    """Analyze user's error trends over time"""
-
-    if not user_id:
-        return None
-
-    from sqlalchemy import select, func
-    from models.error_detail import ErrorDetail
-    from models.analysis import Analysis
-    from datetime import timedelta, datetime
-
-    # Get date range
-    end_date = datetime.utcnow()
-    start_date = end_date - timedelta(days=days)
-
-    # Get old analyses (first week)
-    old_start = start_date
-    old_end = start_date + timedelta(days=days // 2)
-
-    # Get recent analyses (last week)
-    recent_start = end_date - timedelta(days=days // 2)
-    recent_end = end_date
-
-    # Query old error count
-    old_query = select(func.count(ErrorDetail.id)).join(Analysis).where(
-        Analysis.user_id == user_id,
-        Analysis.created_at >= old_start,
-        Analysis.created_at < old_end
-    )
-    old_result = await session.execute(old_query)
-    old_count = old_result.scalar() or 0
-
-    # Query recent error count
-    recent_query = select(func.count(ErrorDetail.id)).join(Analysis).where(
-        Analysis.user_id == user_id,
-        Analysis.created_at >= recent_start,
-        Analysis.created_at < recent_end
-    )
-    recent_result = await session.execute(recent_query)
-    recent_count = recent_result.scalar() or 0
-
-    # Calculate trend
-    if old_count == 0:
-        comparison = "stable"
-        change_percent = "0%"
-    else:
-        change = ((recent_count - old_count) / old_count) * 100
-        change_percent = f"{change:+.0f}%"
-
-        if change < -10:
-            comparison = "improving"
-        elif change > 10:
-            comparison = "worsening"
-        else:
-            comparison = "stable"
-
-    # Find most improved and needs attention
-    # (simplified - in production, group by category)
-    return HistoricalTrend(
-        comparison=comparison,
-        since_last_week=change_percent,
-        most_improved="Grammar" if comparison == "improving" else "N/A",
-        needs_attention="Spelling" if comparison == "worsening" else "N/A"
-    )
-```
-
-**Step 4: Implement generate_learning_insights method**
-
-```python
-# In LLMEngine class
-
-async def generate_learning_insights(
-    self,
-    lt_errors: List,
-    user_id: Optional[int] = None,
-    session: AsyncSession = None
-) -> LearningAnalysis:
-    """
-    Generate learning insights from LanguageTool errors
-
-    Uses LLM to create personalized learning recommendations
-    """
-    # Extract error patterns
-    error_patterns = self._extract_error_patterns(lt_errors)
-
-    # Analyze historical trends
-    historical_trend = await self._analyze_historical_trends(session, user_id) if session else None
-
-    # Build LLM prompt
-    patterns_text = "\n".join([
-        f"- {p.pattern_name}: {p.frequency} (severity: {p.severity})"
-        for p in error_patterns
-    ])
-
-    examples_text = "\n".join([
-        f"{i+1}. {p.pattern_name}\n   Examples: {', '.join([e['original'] for e in p.examples[:2]])}"
-        for i, p in enumerate(error_patterns[:3])
-    ])
-
-    prompt = f"""You are an expert English teacher. Analyze these student errors and provide personalized learning recommendations.
-
-Error Patterns:
-{patterns_text}
-
-Specific Examples:
-{examples_text}
-
-Provide your analysis in JSON format:
-{{
-  "ea_learning_recommendations": [
-    {{
-      "priority": 1,
-      "topic": "Specific grammar rule name",
-      "description": "Clear explanation of what the student is struggling with",
-      "resources": [
-        {{
-          "type": "grammar_rule",
-          "title": "Rule name",
-          "content": "Detailed explanation..."
-        }},
-        {{
-          "type": "practice_exercise",
-          "title": "Practice name",
-          "difficulty": "intermediate"
-        }}
-      ],
-      "estimated_study_time": "30 minutes"
-    }}
-  ],
-  "personalized_tips": [
-    "Specific actionable tip 1",
-    "Specific actionable tip 2"
-  ]
-}}
-
-Focus on the top 3 error patterns. Be specific and practical."""
-
-    try:
-        # Call LLM
-        response = await self.client.generate(prompt)
-
-        # Parse JSON response
-        import json
-        llm_data = json.loads(response)
-
-        # Convert to dataclasses
-        recommendations = []
-        for rec in llm_data.get('ea_learning_recommendations', [])[:3]:
-            resources = [
-                LearningResource(**r) for r in rec.get('resources', [])
-            ]
-            recommendations.append(LearningRecommendation(
-                priority=rec.get('priority', 1),
-                topic=rec.get('topic', ''),
-                description=rec.get('description', ''),
-                resources=resources,
-                estimated_study_time=rec.get('estimated_study_time', '30 minutes')
-            ))
-
-        tips = llm_data.get('personalized_tips', [])
-
-        return LearningAnalysis(
-            error_patterns=error_patterns,
-            ea_learning_recommendations=recommendations,
-            personalized_tips=tips,
-            historical_trend=historical_trend
-        )
-
-    except Exception as e:
-        # Fallback: return minimal analysis without LLM
-        return LearningAnalysis(
-            error_patterns=error_patterns,
-            ea_learning_recommendations=[],
-            personalized_tips=[
-                f"Focus on {error_patterns[0].pattern_name if error_patterns else 'basic grammar'}"
-            ],
-            historical_trend=historical_trend
-        )
-```
-
-**Step 5: Run type check**
-
-Run: `cd backend && poetry run mypy pipeline/llm_engine.py`
-Expected: No critical errors
-
-**Step 6: Commit**
-
-```bash
-git add backend/pipeline/llm_engine.py
-git commit -m "feat(llm): add learning insights generation"
-```
-
----
-
-## Task 5: Implement optimize_with_llm in Pipeline
-
-**Files:**
-- Modify: `backend/pipeline/analysis_pipeline.py` (append to existing file from Task 3)
-
-**Step 1: Add import for LLM and Learning types**
-
-```python
-# backend/pipeline/analysis_pipeline.py - Add to imports
-
-from models.types import (
-    LLMMoreDetailResult,
-    LLMSuggestion,
-    ChineseCorrection,
-    LearningAnalysis
-)
-```
-
-**Step 2: Implement optimize_with_llm method**
-
-```python
-# In AnalysisPipeline class
-
-async def optimize_with_llm(
-    self,
-    analysis_id: str,  # UUID as string
-    user_id: Optional[UUID] = None,
-    session: AsyncSession = None
-) -> LLMMoreDetailResult:
-    """
-    Run LLM optimization on existing analysis
-
-    Requires valid analysis_id (UUID string) from analyze_rules_only
-    """
-    from sqlalchemy import select
-    from models.analysis import Analysis
-    import uuid
-
-    # Load existing analysis (convert string to UUID)
-    try:
-        analysis_uuid = uuid.UUID(analysis_id)
-    except ValueError:
-        raise ValueError(f"Invalid analysis_id format: {analysis_id}")
-
-    query = select(Analysis).where(Analysis.id == analysis_uuid)
-    result = await session.execute(query)
-    analysis = result.scalar_one_or_none()
-
-    if not analysis:
-        raise ValueError(f"Analysis {analysis_id} not found")
-
-    if analysis.status != 'rule_only':
-        raise ValueError(f"Analysis {analysis_id} has already been optimized")
-
-    # Check rate limits (implement based on your rate limiting logic)
-    # await self.rate_limiter.check_llm_quota(user_id)
-
-    start_time = time.time()
-
-    # Stage 3: LLM Optimization
-    llm_result = await self.llm_engine.optimize(
-        original_text=analysis.original_text,
-        rule_corrections=None,  # Already applied in corrected_text
-        mode=CorrectionMode(analysis.mode)
-    )
-
-    # Generate learning insights
-    from models.error_detail import ErrorDetail
-
-    # Load error details for learning analysis
-    error_query = select(ErrorDetail).where(ErrorDetail.analysis_id == analysis.id)
-    error_result = await session.execute(error_query)
-    ea_error_details = error_result.scalars().all()
-
-    # Convert to LTError format (using existing ErrorDetail fields)
-    lt_errors = []
-    for e in ea_error_details:
-        lt_errors.append(LTError(
-            rule_id=e.rule_id or f"{e.error_type or 'UNKNOWN'}_{e.error_subtype or 'GENERAL'}",
-            category=e.category or e.error_type or 'UNKNOWN',
-            severity=e.severity,
-            position_start=e.start_index,
-            position_end=e.end_index,
-            original_text=e.original_span,
-            replacements=[e.corrected_span] if e.corrected_span else [],
-            message=e.message or e.explanation or "",
-            context=e.context or ""
-        ))
-
-    learning_analysis = await self.llm_engine.generate_learning_insights(
-        lt_errors=lt_errors,
-        user_id=user_id,
-        session=session
-    )
-
-    # Convert suggestions
-    suggestions = [
-        LLMSuggestion(
-            type='naturalness',
-            sentence_index=0,
-            original=analysis.original_text,
-            suggestion=llm_result.optimized_text,
-            explanation="AI优化建议",
-            confidence=0.9
-        )
-    ]
-
-    # Update analysis
-    analysis.status = 'completed'
-    analysis.llm_tokens_used = llm_result.token_count
-    analysis.llm_cost_usd = llm_result.token_count * 0.0001  # Adjust cost calculation
-    analysis.processing_time_ms += int((time.time() - start_time) * 1000)
-
-    # Save learning recommendations
-    from models.learning_recommendation import LearningRecommendation as LR
-
-    for rec in learning_analysis.ea_learning_recommendations:
-        lr = LR(
-            user_id=user_id,
-            analysis_id=analysis.id,
-            pattern_name=rec.topic,
-            frequency=float(rec.priority) * 10.0,  # Simplified
-            severity='high' if rec.priority == 1 else 'medium',
-            recommendation=rec.description,
-            resources=[r.__dict__ for r in rec.resources],
-            priority=rec.priority,
-            estimated_study_time=rec.estimated_study_time
-        )
-        session.add(lr)
-
-    await session.commit()
-
-    return LLMMoreDetailResult(
-        optimized_text=llm_result.optimized_text,
-        suggestions=suggestions,
-        chinese_corrections=[],  # Extract from llm_result if available
-        learning_analysis=learning_analysis,
-        token_usage=llm_result.token_count
-    )
-```
-
-**Step 3: Run type check**
-
-Run: `cd backend && poetry run mypy pipeline/analysis_pipeline.py`
-Expected: No critical errors
-
-**Step 4: Commit**
-
-```bash
-git add backend/pipeline/analysis_pipeline.py
-git commit -m "feat(pipeline): add optimize_with_llm method"
-```
-
----
-
-## Task 6: Add New API Endpoints
+- Modify: `backend/services/analysis_service.py`
+- Modify: `backend/pipeline/llm_engine.py`（让 LLM 返回 learning_analysis）
+- Modify: `backend/pipeline/merger.py`（如需把 LLM corrections 更细粒度落地/展示）
+
+**Steps:**
+1. 在 `AnalysisService` 新增方法 `optimize_with_llm(request, user, db)`：
+   - 输入：`analysis_id`（UUID string）
+   - 默认方案 A：必须 `user` 存在（匿名直接拒绝）
+2. 所有权与存在性校验：
+   - 解析 UUID（非法 → 400）
+   - 查询 Analysis（找不到 → 404）
+   - 校验 `analysis.user_id == user.id`（不满足 → 403）
+3. 状态机与幂等（并发保护）：
+   - 若 `status == "llm_running"` → 409
+   - 若 `status == "llm_completed"` → 409
+   - 若 `status == "failed"`：
+     - 允许重试：继续（并覆盖失败信息）
+     - 不允许重试：409
+   - 若 `status != "rule_only"` 且不属于上述 → 409
+   - 将 `status` 置为 `"llm_running"` 并 `db.commit()`（防止双击重复扣费）
+4. 调用 LLM（修改 `LLMEngine._optimize_combined` 输出结构）：
+   - prompt 要求输出 `learning_analysis`（见 v2 Concrete Specs 的 JSON 结构）
+   - 解析 JSON 后把 `learning_analysis` 作为 dict 带回
+   - 建议把 `learning_analysis` 放到 `LLMResult.metadata["learning_analysis"]`，或直接在 `LLMResult` dataclass 增加字段（二选一，保持最小侵入）
+5. 更新 Analysis（同一条记录）：
+   - `analysis.corrected_text = llm_result.optimized_text`
+   - `analysis.token_usage = llm_result.token_usage`（保留 estimated_cost 可为 0，后续再接模型价格）
+   - `analysis.statistics["learning_analysis"] = learning_analysis_dict`
+   - `analysis.status = "llm_completed"`
+   - 记录 Stage times（建议写入 `analysis.statistics["stage_times"]` 或直接返回给 API）
+   - `db.commit()`
+6. 异常处理与降级：
+   - LLM 调用失败：`analysis.status = "failed"`，并写入 `analysis.statistics["llm_error"] = ...`，`db.commit()`，然后向 API 抛 500（或返回 200 + failed 状态，二选一；建议 500 并让前端提示“可重试”）
+
+**Acceptance:**
+- Phase 2 能基于 Phase 1 的 analysis_id 更新同一条 Analysis（状态变更、token_usage 写入、learning_analysis 写入）。
+- 双击/并发请求不会触发两次扣费（llm_running 保护生效）。
+
+### Task 5: API Endpoints + Rate Limit Integration
+
+**Goal:** 把两阶段功能暴露为独立 endpoint，并保证成本可控。
 
 **Files:**
 - Modify: `backend/api/v1/analysis.py`
+- (Optional) Modify: `backend/services/rate_limit_service.py`（若需要新增 quota type，例如 “optimize”）
 
-**Step 1: Add new request/response models**
+**Steps:**
+1. 新增 endpoint：`POST /analyze/rules-only`
+   - `user: User | None = Depends(get_optional_user)`（允许匿名）
+   - `db: Session = Depends(get_db)`
+   - 调用 `AnalysisService.analyze_rules_only(...)`
+   - 返回 `RulesOnlyResponse`
+2. 新增 endpoint：`POST /analyze/optimize-llm`
+   - `user: User = Depends(get_current_user)`（强制登录）
+   - `db: Session = Depends(get_db)`
+   - 调用 `AnalysisService.optimize_with_llm(...)`
+   - 返回 `OptimizeLLMResponse`
+3. 限流与记账（复用现有 `/analyze` 的逻辑）：
+   - `RateLimitService.check_rate_limit(...)`
+     - Phase 1：可以 tokens_used=0；主要用于匿名防滥用
+     - Phase 2：在调用 LLM 前先做 quota check，完成后 `track_usage(user_id, tokens_used, estimated_cost, db)`
+   - user_id 构造沿用 `/analyze`：登录用 `str(user.id)`，匿名用 `"anon:" + http_request.client.host`（或后续替换为 requester_id）
+4. 状态码约定（API 层统一）：
+   - 401/403/404/409/422/500（见 Task 1）
 
-```python
-# backend/api/v1/analysis.py
+**Acceptance:**
+- 前端可以分别调用两个 endpoint。
+- Phase 2 的 LLM 成本会被正确记账与限制。
 
-from pydantic import BaseModel, Field
-from typing import List, Dict, Any, Optional
+### Task 6: Tests (Unit + API + Integration)
 
-class RulesOnlyRequest(BaseModel):
-    text: str = Field(..., min_length=1, max_length=5000)
-    mode: CorrectionMode = Field(default='accuracy')
-    language: str = Field(default='en-US')
+**Goal:** 用测试锁定“阶段拆分/状态机/所有权/降级”这四类高风险点。
 
-class OptimizeLLMRequest(BaseModel):
-    analysis_id: str = Field(...)
+**Steps:**
+1. Unit（service 层）：
+   - rules-only：输入简单文本，断言返回包含 analysis_id、errors、status=rule_only，并验证 DB 中 Analysis/ErrorDetail 写入（含 rule_id/category/context/message 非空或可空的合理性）。
+   - optimize：mock `LLMEngine.optimize` 返回固定 optimized_text + token_usage + learning_analysis，断言：
+     - 状态机：rule_only → llm_running → llm_completed
+     - 重复调用返回 409
+     - learning_analysis 写入 statistics
+2. API 测试（FastAPI TestClient）：
+   - `/analyze/rules-only`：匿名 200；空文本 422
+   - `/analyze/optimize-llm`：匿名 401；不属于当前用户 403；不存在 404；重复 409
+3. Integration（可选真实 LLM，建议用 marker 控制）：
+   - 完整链路：rules-only → optimize-llm
+   - 验证 DB 最终状态为 llm_completed，token_usage.total_tokens > 0（真实 LLM）或 == mock 值（mock）
 
-class LTErrorResponse(BaseModel):
-    rule_id: str
-    category: str
-    severity: str
-    position: Dict[str, int]
-    original_text: str
-    replacements: List[str]
-    message: str
-    context: str
+**Acceptance:**
+- CI/本地能稳定跑过（mock LLM 为默认；真实 LLM 的测试可单独触发）。
 
-class RuleBasedStatisticsResponse(BaseModel):
-    total_errors: int
-    by_category: Dict[str, int]
+### Task 7: Final Verification Checklist
 
-class RuleBasedResultResponse(BaseModel):
-    success: bool
-    data: Dict[str, Any]
+**Goal:** 确保上线质量与回滚安全。
 
-class LLMResultResponse(BaseModel):
-    success: bool
-    data: Dict[str, Any]
-```
+**Steps / Commands:**
+1. 后端测试：
+   - `cd backend && poetry run pytest`
+2. 静态检查：
+   - `cd backend && poetry run ruff check .`
+   - `cd backend && poetry run mypy .`
+3. 数据库迁移：
+   - `cd backend && poetry run alembic upgrade head`
+   - `cd backend && poetry run alembic downgrade -1`（验证可回滚）
+4. 端到端人工验收（最少两条）：
+   - rules-only：确认 UI 立即展示规则结果与按钮可用
+   - optimize：确认按钮触发后展示 LLM 优化文本与学习建议
 
-**Step 2: Add /analyze/rules-only endpoint**
-
-```python
-# In backend/api/v1/analysis.py, after existing endpoints
-
-@router.post("/analyze/rules-only", response_model=RuleBasedResultResponse)
-async def analyze_rules_only(
-    request: RulesOnlyRequest,
-    current_user: Optional[User] = Depends(get_current_user_or_none),
-    session: AsyncSession = Depends(get_db)
-):
-    """
-    Fast analysis using LanguageTool only
-
-    Returns rule-based corrections + token estimate for optional LLM optimization
-    """
-    try:
-        # Get user_id (anonymous users use None)
-        user_id = current_user.id if current_user else None
-
-        # Run pipeline
-        result = await pipeline.analyze_rules_only(
-            text=request.text,
-            mode=request.mode,
-            user_id=user_id,
-            session=session
-        )
-
-        # Convert to response format
-        return RuleBasedResultResponse(
-            success=True,
-            data={
-                "analysis_id": result.analysis_id,
-                "errors": [
-                    {
-                        "rule_id": e.rule_id,
-                        "category": e.category,
-                        "severity": e.severity,
-                        "position": {
-                            "start": e.position_start,
-                            "end": e.position_end
-                        },
-                        "original_text": e.original_text,
-                        "replacements": e.replacements,
-                        "message": e.message,
-                        "context": e.context
-                    }
-                    for e in result.errors
-                ],
-                "corrected_text": result.corrected_text,
-                "statistics": {
-                    "total_errors": result.statistics.total_errors,
-                    "by_category": result.statistics.by_category
-                },
-                "processing_time_ms": result.processing_time_ms,
-                "estimated_llm_tokens": result.estimated_llm_tokens
-            }
-        )
-
-    except Exception as e:
-        logger.error(f"Rules-only analysis failed: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
-```
-
-**Step 3: Add /analyze/optimize-llm endpoint**
-
-```python
-# In backend/api/v1/analysis.py
-
-@router.post("/analyze/optimize-llm", response_model=LLMResultResponse)
-async def optimize_with_llm(
-    request: OptimizeLLMRequest,
-    current_user: Optional[User] = Depends(get_current_user_or_none),
-    session: AsyncSession = Depends(get_db)
-):
-    """
-    Run LLM optimization on existing analysis
-
-    Requires valid analysis_id from /analyze/rules-only
-    Checks user credits/rate limits before running
-    """
-    try:
-        user_id = current_user.id if current_user else None
-
-        # Check rate limits for anonymous users
-        if not current_user:
-            # Implement anonymous rate limiting
-            pass
-
-        # Run pipeline
-        result = await pipeline.optimize_with_llm(
-            analysis_id=request.analysis_id,
-            user_id=user_id,
-            session=session
-        )
-
-        # Convert to response format
-        return LLMResultResponse(
-            success=True,
-            data={
-                "optimized_text": result.optimized_text,
-                "suggestions": [
-                    {
-                        "type": s.type,
-                        "sentence_index": s.sentence_index,
-                        "original": s.original,
-                        "suggestion": s.suggestion,
-                        "explanation": s.explanation,
-                        "confidence": s.confidence
-                    }
-                    for s in result.suggestions
-                ],
-                "chinese_corrections": [
-                    {
-                        "original": c.original,
-                        "corrected": c.corrected
-                    }
-                    for c in result.chinese_corrections
-                ],
-                "learning_analysis": {
-                    "error_patterns": [
-                        {
-                            "pattern_name": p.pattern_name,
-                            "frequency": p.frequency,
-                            "examples": p.examples,
-                            "severity": p.severity
-                        }
-                        for p in result.learning_analysis.error_patterns
-                    ],
-                    "ea_learning_recommendations": [
-                        {
-                            "priority": r.priority,
-                            "topic": r.topic,
-                            "description": r.description,
-                            "resources": [
-                                {
-                                    "type": res.type,
-                                    "title": res.title,
-                                    "content": res.content,
-                                    "difficulty": res.difficulty
-                                }
-                                for res in r.resources
-                            ],
-                            "estimated_study_time": r.estimated_study_time
-                        }
-                        for r in result.learning_analysis.ea_learning_recommendations
-                    ],
-                    "personalized_tips": result.learning_analysis.personalized_tips,
-                    "historical_trend": (
-                        {
-                            "comparison": result.learning_analysis.historical_trend.comparison,
-                            "since_last_week": result.learning_analysis.historical_trend.since_last_week,
-                            "most_improved": result.learning_analysis.historical_trend.most_improved,
-                            "needs_attention": result.learning_analysis.historical_trend.needs_attention
-                        }
-                        if result.learning_analysis.historical_trend
-                        else None
-                    )
-                },
-                "token_usage": result.token_usage
-            }
-        )
-
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    except Exception as e:
-        logger.error(f"LLM optimization failed: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
-```
-
-**Step 4: Run type check**
-
-Run: `cd backend && poetry run mypy api/v1/analysis.py`
-Expected: No critical errors
-
-**Step 5: Commit**
-
-```bash
-git add backend/api/v1/analysis.py
-git commit -m "feat(api): add /analyze/rules-only and /analyze/optimize-llm endpoints"
-```
+**Acceptance:**
+- 所有检查通过且 migration 可回滚。
 
 ---
 
-## Task 7: Write Tests for Pipeline Methods
+## Notes (Why v2 is more accurate)
 
-**Files:**
-- Create: `backend/tests/test_pipeline_rules_only.py`
-- Create: `backend/tests/test_pipeline_llm_optimize.py`
+- 以“端到端可跑通”为核心：明确匿名策略、所有权校验、状态机、限流与降级路径。
+- 以“协议强类型”为核心：避免弱类型 `success/data` 造成前后端 drift。
+- 以“先 JSON 后拆表”为核心：学习建议先能用，后续再做统计/趋势表结构。
 
-**Step 1: Write test for analyze_rules_only**
+## References
 
-```python
-# backend/tests/test_pipeline_rules_only.py
-
-import pytest
-from pipeline.analysis_pipeline import AnalysisPipeline
-from models.types import CorrectionMode
-
-@pytest.mark.asyncio
-async def test_analyze_rules_only_simple_text(db_session):
-    """Test rules-only analysis with simple text"""
-    pipeline = AnalysisPipeline()
-
-    text = "She dont like pizza"
-    mode = CorrectionMode.ACCURACY
-
-    result = await pipeline.analyze_rules_only(
-        text=text,
-        mode=mode,
-        user_id=None,
-        session=db_session
-    )
-
-    # Verify result structure
-    assert result.analysis_id is not None
-    assert len(result.errors) > 0
-    assert result.corrected_text == "She doesn't like pizza"
-    assert result.statistics.total_errors > 0
-    assert result.processing_time_ms > 0
-    assert result.estimated_llm_tokens > 0
-
-    # Verify error details
-    error = result.errors[0]
-    assert error.category == "GRAMMAR"
-    assert error.severity == "ERROR"
-    assert "dont" in error.original_text.lower()
-
-@pytest.mark.asyncio
-async def test_analyze_rules_only_with_user(db_session, test_user):
-    """Test rules-only analysis with authenticated user"""
-    pipeline = AnalysisPipeline()
-
-    text = "He go to school yesterday"
-    mode = CorrectionMode.ACCURACY
-
-    result = await pipeline.analyze_rules_only(
-        text=text,
-        mode=mode,
-        user_id=test_user.id,
-        session=db_session
-    )
-
-    # Verify analysis is saved to database
-    from sqlalchemy import select
-    from models.analysis import Analysis
-    import uuid
-
-    query = select(Analysis).where(Analysis.id == uuid.UUID(result.analysis_id))
-    db_result = await db_session.execute(query)
-    analysis = db_result.scalar_one()
-
-    assert analysis.user_id == test_user.id
-    assert analysis.status == 'rule_only'
-    assert analysis.original_text == text
-
-@pytest.mark.asyncio
-async def test_analyze_rules_only_empty_text(db_session):
-    """Test rules-only analysis with empty text"""
-    pipeline = AnalysisPipeline()
-
-    with pytest.raises(Exception):
-        await pipeline.analyze_rules_only(
-            text="",
-            mode=CorrectionMode.ACCURACY,
-            user_id=None,
-            session=db_session
-        )
-```
-
-**Step 2: Write test for optimize_with_llm**
-
-```python
-# backend/tests/test_pipeline_llm_optimize.py
-
-import pytest
-from pipeline.analysis_pipeline import AnalysisPipeline
-from models.types import CorrectionMode
-
-@pytest.mark.asyncio
-async def test_optimize_with_llm_valid_analysis(db_session):
-    """Test LLM optimization with valid analysis_id"""
-    pipeline = AnalysisPipeline()
-
-    # First create a rule-only analysis
-    text = "She dont like pizza"
-    rule_result = await pipeline.analyze_rules_only(
-        text=text,
-        mode=CorrectionMode.ACCURACY,
-        user_id=None,
-        session=db_session
-    )
-
-    # Then optimize with LLM
-    llm_result = await pipeline.optimize_with_llm(
-        analysis_id=rule_result.analysis_id,
-        user_id=None,
-        session=db_session
-    )
-
-    # Verify result
-    assert llm_result.optimized_text is not None
-    assert len(llm_result.suggestions) > 0
-    assert llm_result.learning_analysis is not None
-    assert llm_result.token_usage > 0
-
-    # Verify learning analysis
-    assert len(llm_result.learning_analysis.error_patterns) > 0
-    assert len(llm_result.learning_analysis.personalized_tips) > 0
-
-@pytest.mark.asyncio
-async def test_optimize_with_llm_invalid_id(db_session):
-    """Test LLM optimization with invalid analysis_id"""
-    pipeline = AnalysisPipeline()
-
-    with pytest.raises(ValueError, match="not found"):
-        await pipeline.optimize_with_llm(
-            analysis_id="999999",
-            user_id=None,
-            session=db_session
-        )
-
-@pytest.mark.asyncio
-async def test_optimize_with_llm_already_optimized(db_session):
-    """Test LLM optimization on already optimized analysis"""
-    pipeline = AnalysisPipeline()
-
-    # Create and optimize
-    text = "Test text"
-    rule_result = await pipeline.analyze_rules_only(
-        text=text,
-        mode=CorrectionMode.ACCURACY,
-        user_id=None,
-        session=db_session
-    )
-
-    await pipeline.optimize_with_llm(
-        analysis_id=rule_result.analysis_id,
-        user_id=None,
-        session=db_session
-    )
-
-    # Try to optimize again
-    with pytest.raises(ValueError, match="already been optimized"):
-        await pipeline.optimize_with_llm(
-            analysis_id=rule_result.analysis_id,
-            user_id=None,
-            session=db_session
-        )
-```
-
-**Step 3: Run tests**
-
-Run: `cd backend && poetry run pytest tests/test_pipeline_rules_only.py -v`
-Expected: Some tests may fail if database/setup not ready
-
-Run: `cd backend && poetry run pytest tests/test_pipeline_llm_optimize.py -v`
-Expected: Same as above
-
-**Step 4: Commit**
-
-```bash
-git add backend/tests/
-git commit -m "test: add tests for split analysis pipeline methods"
-```
-
----
-
-## Task 8: Write Tests for API Endpoints
-
-**Files:**
-- Create: `backend/tests/test_api_split_analysis.py`
-
-**Step 1: Write API tests**
-
-```python
-# backend/tests/test_api_split_analysis.py
-
-import pytest
-from fastapi.testclient import TestClient
-from main import app
-
-client = TestClient(app)
-
-@pytest.mark.asyncio
-async def test_analyze_rules_only_endpoint(db_session):
-    """Test /analyze/rules-only endpoint"""
-    response = client.post(
-        "/api/v1/analyze/rules-only",
-        json={
-            "text": "She dont like pizza",
-            "mode": "accuracy",
-            "language": "en-US"
-        }
-    )
-
-    assert response.status_code == 200
-    data = response.json()
-
-    assert data["success"] is True
-    assert "analysis_id" in data["data"]
-    assert "errors" in data["data"]
-    assert "corrected_text" in data["data"]
-    assert "estimated_llm_tokens" in data["data"]
-
-    # Verify error structure
-    errors = data["data"]["errors"]
-    assert len(errors) > 0
-    assert "rule_id" in errors[0]
-    assert "category" in errors[0]
-
-@pytest.mark.asyncio
-async def test_optimize_with_llm_endpoint(db_session):
-    """Test /analyze/optimize-llm endpoint"""
-    # First create an analysis
-    rule_response = client.post(
-        "/api/v1/analyze/rules-only",
-        json={
-            "text": "She dont like pizza",
-            "mode": "accuracy"
-        }
-    )
-
-    analysis_id = rule_response.json()["data"]["analysis_id"]
-
-    # Then optimize
-    llm_response = client.post(
-        "/api/v1/analyze/optimize-llm",
-        json={"analysis_id": analysis_id}
-    )
-
-    assert llm_response.status_code == 200
-    data = llm_response.json()
-
-    assert data["success"] is True
-    assert "optimized_text" in data["data"]
-    assert "learning_analysis" in data["data"]
-    assert "token_usage" in data["data"]
-
-    # Verify learning analysis
-    learning = data["data"]["learning_analysis"]
-    assert "error_patterns" in learning
-    assert "ea_learning_recommendations" in learning
-    assert "personalized_tips" in learning
-
-@pytest.mark.asyncio
-async def test_analyze_rules_only_validation(db_session):
-    """Test validation on /analyze/rules-only"""
-    # Empty text
-    response = client.post(
-        "/api/v1/analyze/rules-only",
-        json={"text": "", "mode": "accuracy"}
-    )
-
-    assert response.status_code == 422  # Validation error
-
-@pytest.mark.asyncio
-async def test_optimize_with_llm_not_found(db_session):
-    """Test /analyze/optimize-llm with non-existent analysis"""
-    response = client.post(
-        "/api/v1/analyze/optimize-llm",
-        json={"analysis_id": "999999"}
-    )
-
-    assert response.status_code == 404
-```
-
-**Step 2: Run tests**
-
-Run: `cd backend && poetry run pytest tests/test_api_split_analysis.py -v`
-Expected: Tests may fail if endpoints not implemented
-
-**Step 3: Commit**
-
-```bash
-git add backend/tests/test_api_split_analysis.py
-git commit -m "test: add API tests for split analysis endpoints"
-```
-
----
-
-## Task 9: Database Migration
-
-**Files:**
-- Modify: `backend/alembic/versions/<newest_migration>.py` (created in Task 2)
-
-**Step 1: Review migration**
-
-Open the migration file created in Task 2 and verify:
-- ALTER TABLE ea_analyses ADD COLUMN status
-- ALTER TABLE ea_analyses ADD COLUMN llm_tokens_used
-- ALTER TABLE ea_analyses ADD COLUMN llm_cost_usd
-- CREATE TABLE ea_error_details
-- CREATE TABLE ea_learning_recommendations
-- CREATE TABLE ea_user_error_trends
-
-**Step 2: Run migration**
-
-Run: `cd backend && poetry run alembic upgrade head`
-Expected: "Running upgrade..." message
-
-**Step 3: Verify database schema**
-
-Run: `psql -U postgres -d english_assistant -c "\d analyses"`
-Expected: Should show new columns (status, llm_tokens_used, llm_cost_usd)
-
-Run: `psql -U postgres -d english_assistant -c "\d ea_error_details"`
-Expected: Should show new table
-
-**Step 4: Commit migration**
-
-```bash
-git add backend/alembic/versions/
-git commit -m "migration: apply split analysis database changes"
-```
-
----
-
-## Task 10: Integration Test
-
-**Files:**
-- Create: `backend/tests/test_integration_split_analysis.py`
-
-**Step 1: Write end-to-end integration test**
-
-```python
-# backend/tests/test_integration_split_analysis.py
-
-import pytest
-from fastapi.testclient import TestClient
-from main import app
-
-client = TestClient(app)
-
-@pytest.mark.asyncio
-@pytest.mark.integration
-async def test_full_split_analysis_workflow(db_session):
-    """Test complete workflow: rules-only → optimize"""
-    # Step 1: User submits text
-    text = "She dont like pizza and he go to school"
-
-    rule_response = client.post(
-        "/api/v1/analyze/rules-only",
-        json={"text": text, "mode": "accuracy"}
-    )
-
-    assert rule_response.status_code == 200
-    rule_data = rule_response.json()
-    analysis_id = rule_data["data"]["analysis_id"]
-
-    # Verify LanguageTool results
-    assert rule_data["data"]["statistics"]["total_errors"] >= 2
-
-    # Step 2: User triggers LLM optimization
-    llm_response = client.post(
-        "/api/v1/analyze/optimize-llm",
-        json={"analysis_id": analysis_id}
-    )
-
-    assert llm_response.status_code == 200
-    llm_data = llm_response.json()
-
-    # Verify LLM results
-    assert llm_data["data"]["optimized_text"] is not None
-    assert llm_data["data"]["token_usage"] > 0
-
-    # Verify learning analysis
-    learning = llm_data["data"]["learning_analysis"]
-    assert len(learning["error_patterns"]) > 0
-    assert len(learning["personalized_tips"]) > 0
-
-    # Step 3: Verify database state
-    from sqlalchemy import select
-    from models.analysis import Analysis
-    import uuid
-
-    query = select(Analysis).where(Analysis.id == uuid.UUID(analysis_id))
-    result = await db_session.execute(query)
-    analysis = result.scalar_one()
-
-    assert analysis.status == 'completed'
-    assert analysis.llm_tokens_used > 0
-
-@pytest.mark.asyncio
-@pytest.mark.integration
-async def test_rules_only_without_optimization(db_session):
-    """Test using rules-only without LLM (cost-saving scenario)"""
-    text = "Simple test text with no errors"
-
-    rule_response = client.post(
-        "/api/v1/analyze/rules-only",
-        json={"text": text, "mode": "accuracy"}
-    )
-
-    assert rule_response.status_code == 200
-    rule_data = rule_response.json()
-    analysis_id = rule_data["data"]["analysis_id"]
-
-    # User decides NOT to optimize (saves tokens)
-    # Verify analysis remains in 'rule_only' state
-    from sqlalchemy import select
-    from models.analysis import Analysis
-    import uuid
-
-    query = select(Analysis).where(Analysis.id == uuid.UUID(analysis_id))
-    result = await db_session.execute(query)
-    analysis = result.scalar_one()
-
-    assert analysis.status == 'rule_only'
-    assert analysis.llm_tokens_used == 0
-```
-
-**Step 2: Run integration test**
-
-Run: `cd backend && poetry run pytest tests/test_integration_split_analysis.py -v -m integration`
-Expected: All tests pass if backend is running
-
-**Step 3: Commit**
-
-```bash
-git add backend/tests/test_integration_split_analysis.py
-git commit -m "test: add integration tests for split analysis workflow"
-```
-
----
-
-## Task 11: Documentation
-
-**Files:**
-- Update: `docs/04-technical-design/architecture.md`
-- Update: `CLAUDE.md`
-- Create: `docs/api-split-analysis.md`
-
-**Step 1: Update architecture documentation**
-
-Add to `docs/04-technical-design/architecture.md`:
-
-```markdown
-### Split Analysis Architecture (v1.1)
-
-**Sequential Analysis Flow:**
-
-The system now supports sequential analysis with cost optimization:
-
-1. **Phase 1: Rule-Based Analysis** (Fast, Free)
-   - Endpoint: `POST /api/v1/analyze/rules-only`
-   - Processing: 2-4 seconds
-   - Returns: LanguageTool errors + corrected text
-   - Token cost: 0
-
-2. **Phase 2: LLM Optimization** (Optional, Costly)
-   - Endpoint: `POST /api/v1/analyze/optimize-llm`
-   - Triggered by: User choice
-   - Processing: 3-5 seconds
-   - Returns: AI suggestions + learning insights
-   - Token cost: ~15-50 tokens
-
-**Database Schema Updates:**
-
-- `analyses.status`: 'rule_only' → 'completed'
-- `analyses.llm_tokens_used`: Token count
-- `ea_error_details`: Full LT error details
-- `ea_learning_recommendations`: Personalized learning suggestions
-```
-
-**Step 2: Update CLAUDE.md**
-
-Add to `CLAUDE.md` under "Latest Work":
-
-```markdown
-- ✅ **Split analysis feature** - Sequential LT + optional LLM
-- ✅ **Learning recommendations** - Personalized learning insights
-- ✅ **Cost optimization** - User-controlled LLM usage
-```
-
-**Step 3: Create API documentation**
-
-Create `docs/api-split-analysis.md`:
-
-```markdown
-# Split Analysis API Documentation
-
-## POST /api/v1/analyze/rules-only
-
-Fast analysis using LanguageTool only.
-
-**Request:**
-```json
-{
-  "text": "She dont like pizza",
-  "mode": "accuracy",
-  "language": "en-US"
-}
-```
-
-**Response:**
-```json
-{
-  "success": true,
-  "data": {
-    "analysis_id": "123",
-    "errors": [...],
-    "corrected_text": "She doesn't like pizza",
-    "statistics": {...},
-    "estimated_llm_tokens": 15
-  }
-}
-```
-
-## POST /api/v1/analyze/optimize-llm
-
-Run LLM optimization on existing analysis.
-
-**Request:**
-```json
-{
-  "analysis_id": "123"
-}
-```
-
-**Response:**
-```json
-{
-  "success": true,
-  "data": {
-    "optimized_text": "...",
-    "suggestions": [...],
-    "learning_analysis": {...},
-    "token_usage": 25
-  }
-}
-```
-```
-
-**Step 4: Commit**
-
-```bash
-git add docs/
-git commit -m "docs: add split analysis architecture and API documentation"
-```
-
----
-
-## Task 12: Final Integration and Cleanup
-
-**Files:**
-- Various
-
-**Step 1: Run full test suite**
-
-Run: `cd backend && poetry run pytest -v`
-Expected: All tests pass
-
-**Step 2: Check for TODO comments**
-
-Run: `grep -r "TODO" backend/ --include="*.py"`
-Expected: No critical TODOs remaining
-
-**Step 3: Run type checking**
-
-Run: `cd backend && poetry run mypy .`
-Expected: No critical errors
-
-**Step 4: Format code**
-
-Run: `cd backend && poetry run black .`
-Run: `cd backend && poetry run ruff check . --fix`
-
-**Step 5: Final commit**
-
-```bash
-git add -A
-git commit -m "feat: complete split analysis implementation"
-```
-
----
-
-## Testing Checklist
-
-Before considering this feature complete:
-
-- [ ] All unit tests pass (`pytest tests/`)
-- [ ] Integration tests pass (`pytest -m integration`)
-- [ ] API endpoints return correct responses
-- [ ] Database migration applied successfully
-- [ ] LanguageTool errors saved correctly
-- [ ] LLM optimization works end-to-end
-- [ ] Learning recommendations generated
-- [ ] Token estimation accurate
-- [ ] Error handling works (invalid ID, already optimized, etc.)
-- [ ] Frontend can call new endpoints
-- [ ] Type checking passes (`mypy`)
-- [ ] Code formatted (`black`, `ruff`)
-
----
-
-## Rollback Plan
-
-If critical issues arise:
-
-1. **Frontend**: Revert to old API calls
-   - Change `analyzeWithRules()` back to `analyzeText()`
-   - Use old 3-panel layout
-
-2. **Backend**: Feature-flag the endpoints
-   - Add `ENABLE_SPLIT_ANALYSIS=False` to config
-   - Return 503 for new endpoints if disabled
-
-3. **Database**: Migration is reversible
-   - `alembic downgrade -1` to remove new tables
-   - Old columns remain untouched
-
----
-
-## Success Metrics
-
-- **Performance**: Rules-only < 5 seconds, LLM optimize < 10 seconds
-- **Cost**: Average LLM usage < 30% (users optimize selectively)
-- **Quality**: Learning recommendations helpful (user feedback > 4/5)
-- **Reliability**: < 1% failure rate for both endpoints
+- `docs/plans/2026-02-05-function-split-design.md`
+- `backend/pipeline/pipeline.py`
+- `backend/pipeline/rule_engine.py`
+- `backend/pipeline/llm_engine.py`
