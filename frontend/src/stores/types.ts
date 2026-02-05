@@ -47,6 +47,95 @@ export interface AnalysisResult {
 }
 
 /**
+ * New Split Analysis Types
+ */
+
+// LanguageTool Error Types
+export interface LTError {
+  rule_id: string
+  category: string // GRAMMAR, TYPOS, PUNCTUATION, etc.
+  severity: string // ERROR, WARNING
+  position: { start: number; end: number }
+  original_text: string
+  replacements: string[]
+  message: string
+  context: string
+}
+
+export interface RuleBasedStatistics {
+  total_errors: number
+  by_category: Record<string, number>
+}
+
+export interface RuleBasedResult {
+  analysis_id: string
+  errors: LTError[]
+  corrected_text: string
+  statistics: RuleBasedStatistics
+  processing_time_ms: number
+  estimated_llm_tokens: number
+}
+
+// LLM Optimization Types
+export interface LLMSuggestion {
+  type: string // naturalness, style_variant, etc.
+  sentence_index: number
+  original: string
+  suggestion: string
+  explanation: string
+  confidence: number
+}
+
+export interface ChineseCorrection {
+  original: string
+  corrected: string
+}
+
+export interface ErrorPattern {
+  pattern_name: string
+  frequency: string // "43%"
+  examples: Array<{ original: string; corrected: string }>
+  severity: 'high' | 'medium' | 'low'
+}
+
+export interface LearningResource {
+  type: string // grammar_rule, practice_exercise
+  title: string
+  content?: string
+  difficulty?: string
+}
+
+export interface LearningRecommendation {
+  priority: number
+  topic: string
+  description: string
+  resources: LearningResource[]
+  estimated_study_time: string
+}
+
+export interface HistoricalTrend {
+  comparison: 'improving' | 'stable' | 'worsening'
+  since_last_week: string
+  most_improved: string
+  needs_attention: string
+}
+
+export interface LearningAnalysis {
+  error_patterns: ErrorPattern[]
+  learning_recommendations: LearningRecommendation[]
+  personalized_tips: string[]
+  historical_trend?: HistoricalTrend
+}
+
+export interface LLMResult {
+  optimized_text: string
+  suggestions: LLMSuggestion[]
+  chinese_corrections: ChineseCorrection[]
+  learning_analysis: LearningAnalysis
+  token_usage: number
+}
+
+/**
  * Backend API Response Types
  */
 export interface ErrorDetailResponse {

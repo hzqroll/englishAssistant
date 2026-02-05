@@ -7,20 +7,22 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 **English Transfer Assistant** is an AI-powered English text correction and analysis tool designed for English learners. The project helps users improve their English writing through intelligent error detection, correction, and structured explanations.
 
 ### Current Status
-- **Phase**: Implementation (Phase 3) - Backend Operational, Frontend Integration In Progress
-- **Backend**: ✅ Complete and Working (all core endpoints tested and operational)
-- **Frontend**: 🔄 In Progress (components built, backend integration needed)
-- **Pipeline**: ✅ Operational (4-stage pipeline processing text successfully)
+- **Phase**: Feature Implementation - Split Analysis (LanguageTool + LLM Separation)
+- **Backend**: ✅ Operational (core pipeline working), 🔄 Adding split analysis endpoints
+- **Frontend**: ✅ UI Components Complete (RuleEnginePanel, LLMPanel, AIOptimizeButton)
+- **Pipeline**: ✅ Operational (4-stage pipeline), 🔄 Refactoring for sequential analysis
 - **LLM Multi-Provider**: ✅ Complete (Zhipu AI, OpenAI, Anthropic, Gemini support)
-- **Documentation**: Complete (see `/docs` directory)
+- **Documentation**: ✅ Complete design and implementation plan
+- **Branch**: `feature/mvp_v1`
 
 ### Latest Work
-- ✅ **Performance optimization** - LanguageTool singleton pattern reduces response time from 12s to ~4s
-- ✅ **Gemini provider added** - Google Gemini integration complete (4 models)
-- ✅ **Analyze endpoint operational** - Successfully processing text with error detection
-- ✅ **LLM multi-provider system** - 20 files, 4 providers, 14 models
-- ✅ **Anonymous user support** - In-memory rate limiting working
-- ✅ **Rate limiting fixed** - UUID handling for anonymous users resolved
+- ✅ **Function split design completed** - LanguageTool and LLM separation architecture
+- ✅ **UI components built** - RuleEnginePanel, LLMPanel, AIOptimizeButton (3 files)
+- ✅ **Frontend types updated** - TypeScript interfaces for split analysis
+- ✅ **API client updated** - New methods: analyzeRulesOnly, optimizeWithLLM
+- ✅ **Pinia store updated** - New state: ruleResult, llmResult, isOptimizing
+- ✅ **Implementation plan created** - 12 tasks, 35+ steps with complete code
+- 🔄 **Backend implementation pending** - Ready to start development
 - Branch: `feature/mvp_v1`
 
 ### Tech Stack
@@ -55,7 +57,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Core Architecture
 
-### 4-Stage Pipeline (Backend)
+### 4-Stage Pipeline (Current)
 
 The text correction system uses a **4-stage pipeline** orchestrated by `AnalysisPipeline`:
 
@@ -85,7 +87,46 @@ The text correction system uses a **4-stage pipeline** orchestrated by `Analysis
 - Supports in-memory caching (CacheService) for V1 MVP
 - Graceful degradation if LLM fails
 
+### New Split Analysis Architecture (Implementation In Progress)
+
+**Sequential Analysis Flow** - User-controlled cost optimization:
+
+**Phase 1: Rule-Based Analysis** (Fast, Free)
+- **Method**: `AnalysisPipeline.analyze_rules_only(text, mode, user_id, session)`
+- **Endpoint**: `POST /api/v1/analyze/rules-only`
+- **Processing**: Preprocessing + LanguageTool only
+- **Response Time**: 2-4 seconds
+- **Returns**: `RuleBasedResult` with:
+  - `analysis_id` - For optional LLM optimization later
+  - `errors[]` - Full LanguageTool error details
+  - `corrected_text` - LT-corrected text
+  - `statistics` - Error counts by category
+  - `estimated_llm_tokens` - Token estimate for Phase 2
+- **Database Status**: `ea_analyses.status = 'rule_only'`
+
+**Phase 2: LLM Optimization** (Optional, Costly)
+- **Method**: `AnalysisPipeline.optimize_with_llm(analysis_id, user_id, session)`
+- **Endpoint**: `POST /api/v1/analyze/optimize-llm`
+- **Trigger**: User clicks "✨ AI 深度优化" button
+- **Processing**: LLM optimization + learning insights generation
+- **Response Time**: 3-5 seconds
+- **Returns**: `LLMResult` with:
+  - `optimized_text` - AI-optimized text
+  - `suggestions[]` - Sentence-level improvements
+  - `chinese_corrections[]` - Chinese-English mixing fixes
+  - `learning_analysis` - Personalized learning recommendations
+  - `token_usage` - Actual token consumption
+- **Database Status**: `ea_analyses.status = 'completed'`
+
+**Learning Analysis System** (New Feature)
+- **Error Pattern Extraction**: Identifies user's common error types
+- **Historical Trend Analysis**: Tracks improvement over 30 days
+- **Personalized Recommendations**: Learning resources and exercises
+- **Progress Tracking**: Compares current vs past performance
+
 ### Database Schema
+
+**Table Naming Convention**: All tables use `ea_` prefix (English Assistant)
 
 **SQLAlchemy Models** (in `backend/models/`):
 
@@ -95,8 +136,25 @@ The text correction system uses a **4-stage pipeline** orchestrated by `Analysis
 - `SoftDeleteMixin` - deleted_at, is_deleted fields
 
 **Core Models:**
-- `User` - id, email, username, password_hash, tier (free/paid), credits
+- `User` (ea_users) - id, email, username, password_hash, tier (free/paid), credits
 - `UserSettings` - dark_mode, correction_mode, notification preferences
+- `APICredit` - user_id, credits_remaining, reset_date
+- `Analysis` (ea_analyses) - id, user_id, original_text, corrected_text, mode, status, llm_tokens_used
+  - **NEW fields**: `status` ('rule_only', 'completed', 'failed'), `llm_tokens_used`, `llm_cost_usd`
+- `ErrorDetail` (ea_error_details) - **NEW TABLE**
+  - analysis_id, rule_id, category, severity, position_start, position_end
+  - original_text, correction, message, context
+  - Stores complete LanguageTool error information
+- `LearningRecommendation` (ea_learning_recommendations) - **NEW TABLE**
+  - user_id, analysis_id, pattern_name, frequency, severity
+  - recommendation (TEXT), resources (JSONB), priority
+  - estimated_study_time, created_at
+- `UserErrorTrend` (ea_user_error_trends) - **NEW TABLE**
+  - user_id, pattern_name, error_count, trend_direction
+  - last_calculated, UNIQUE(user_id, pattern_name)
+- `Tag` - id, name, color
+- `AnalysisTag` - analysis_id, tag_id (many-to-many)
+- `AnalysisCache` - id, text_hash, result_json, expires_at
 - `APICredit` - user_id, credits_remaining, reset_date
 - `Analysis` - id, user_id, original_text, corrected_text, mode, status
 - `ErrorDetail` - id, analysis_id, error_type, severity, position, message
@@ -109,30 +167,86 @@ The text correction system uses a **4-stage pipeline** orchestrated by `Analysis
 - `SessionLocal` - Session factory
 - `get_db()` - Dependency injection for FastAPI
 
-### Frontend Architecture
+## Frontend Architecture (Updated)
 
-**Data Flow Pattern**: Component → Composable → Store → API
+### Data Flow Pattern
+Component → Composable → Store → API
 
-**Pinia Stores** (`src/stores/`):
+### Pinia Stores (`src/stores/`)
 - `authStore` - User, tokens, isAuthenticated, login/register/logout
-- `analysisStore` - currentResult, isAnalyzing, mode, viewMode, progress
+- `analysisStore` - **UPDATED** with split analysis support:
+  - **New State**: `ruleResult`, `llmResult`, `isOptimizing`, `llmError`
+  - **New Computed**: `hasRuleResult`, `hasLLMResult`, `canOptimize`
+  - **New Actions**: `analyzeWithRules()`, `optimizeWithLLM()`
+  - **Legacy**: `currentResult`, `isAnalyzing`, `analyzeText()` (kept for backward compatibility)
 - `historyStore` - items, pagination, filters
 - `uiStore` - toast notifications, dark mode, panel states, sidebar
 
-**API Layer** (`src/api/`):
+### API Layer (`src/api/`)
 - `index.ts` - Axios instance with interceptors (auto token refresh on 401)
-- `auth.ts`, `analysis.ts`, `history.ts`, etc. - Typed API methods
+- `analysis.ts` - **UPDATED** with new endpoints:
+  - `analyzeRulesOnly({ text, mode, language })` - Phase 1: LanguageTool only
+  - `optimizeWithLLM({ analysis_id })` - Phase 2: LLM optimization
+  - `analyze({ text, mode })` - Legacy: Full analysis (kept for compatibility)
+- `auth.ts`, `history.ts`, etc. - Typed API methods
 
-**Component Structure**:
-- `views/` - Page-level components (Home, Auth, History, Statistics, Settings)
-- `components/layout/` - Navbar, MainLayout, LayoutControls
-- `components/panels/` - InputPanel, ComparePanel, AnalysisPanel
-- `components/errors/` - ErrorCard, ErrorHighlight
-- `components/common/` - Toast, LoadingSpinner, ErrorDisplay
+### Component Structure (New Split Layout)
+```
+src/components/
+├── layout/
+│   ├── MainLayout.vue - **UPDATED**: 3-panel layout (30%, 35%, 35%)
+│   └── LayoutControls.vue
+├── panels/
+│   ├── InputPanel.vue - Text input (30% width)
+│   ├── RuleEnginePanel.vue - **NEW**: LanguageTool results (35% width)
+│   ├── LLMPanel.vue - **NEW**: LLM optimization + learning (35% width)
+│   ├── AIOptimizeButton.vue - **NEW**: Floating trigger button
+│   ├── ComparePanel.vue - Legacy (kept for reference)
+│   └── AnalysisPanel.vue - Legacy (kept for reference)
+├── common/ - Toast, LoadingSpinner, ErrorDisplay
+└── errors/ - ErrorCard, ErrorHighlight
+```
 
-**Router** (`src/router/`):
-- Route guards for protected routes
-- Auto-redirect based on auth state
+### New UI Components Details
+
+**1. RuleEnginePanel.vue**
+- Displays LanguageTool analysis results
+- Error categorization (grammar, spelling, tense, word choice, punctuation, casing)
+- Expandable error cards with Rule ID and severity
+- States: waiting → loading → results
+- Custom scrollbar with blue accent
+
+**2. LLMPanel.vue**
+- Displays LLM optimization results
+- Sentence-level improvements (original → LT → AI)
+- Chinese-English mixing corrections
+- **Learning Analysis System**:
+  - 📊 Error pattern distribution (visual progress bars)
+  - 🎯 Personalized learning recommendations (with priority)
+  - 📈 Historical trend analysis (week-over-week)
+  - 💬 Personalized learning tips
+- States: waiting → ready → loading → completed
+
+**3. AIOptimizeButton.vue**
+- Floating button between RuleEnginePanel and LLMPanel
+- 4 states with animations:
+  - **Disabled** (gray): "等待规则检测完成"
+  - **Enabled** (blue gradient): "✨ AI 深度优化 (~15 tokens)" with pulse glow
+  - **Loading** (purple): Dual-ring spinner animation
+  - **Completed** (green): "✓ 优化完成 (12 tokens)" with particle burst
+
+### User Flow
+```
+1. User types text → InputPanel
+2. Click "分析" → analyzeWithRules() called
+3. RuleEnginePanel shows loading → displays LT results (2-4s)
+4. AIOptimizeButton becomes enabled (blue pulsing)
+5. User evaluates: Is LT correction enough?
+   ├─ Yes → Done (saved tokens!)
+   └─ No → Click "✨ AI 深度优化"
+       → LLMPanel shows loading → displays AI results + learning (3-5s)
+       → AIOptimizeButton turns green (shows actual token cost)
+```
 
 ## Development Commands
 
@@ -264,18 +378,21 @@ docker-compose restart postgres
 - **LLM optimization not tested** - Zhipu AI integration needs API key configuration
 - **Frontend-backend integration incomplete** - Vue components need to connect to live API
 
-## API Structure
+## API Structure (Updated)
 
 **Base URL**: `/api/v1`
 
 **Routers** (`backend/api/v1/`):
 - `auth.py` - register, login, refresh, me
-- `analysis.py` - POST /analyze (main endpoint) ✅ **OPERATIONAL**
+- `analysis.py` - **UPDATED** with split analysis endpoints:
+  - `POST /analyze/rules-only` - **NEW**: LanguageTool-only analysis
+  - `POST /analyze/optimize-llm` - **NEW**: LLM optimization on existing analysis
+  - `POST /analyze` - Legacy: Full analysis (both LT + LLM)
 - `history.py` - GET /history, GET /history/{id}, DELETE /history/{id}
 - `statistics.py` - GET /overview, GET /tokens
 - `export.py` - POST /export (JSON/Markdown/PDF)
 - `settings.py` - GET /settings, PUT /settings
-- `llm_config.py` - GET /llm/providers, GET /llm/config, PUT /llm/config, POST /llm/validate ✅ **COMPLETE**
+- `llm_config.py` - GET /llm/providers, GET /llm/config, PUT /llm/config, POST /llm/validate
 
 **Response Format**:
 ```json
@@ -287,10 +404,12 @@ docker-compose restart postgres
 
 **Error Codes**: INVALID_INPUT, UNAUTHORIZED, TOKEN_EXPIRED, RATE_LIMIT_EXCEEDED, ANALYSIS_FAILED, LLM_ERROR, GRAMMAR_TOOL_ERROR
 
-## Important File Locations
+## Documentation
 
-**Documentation:**
-- `/docs/FRAMEWORK_SETUP.md` - Complete framework setup documentation (just created)
+**Design Documents:**
+- `/docs/03-product-features/20260205-function-feature.md` - Original feature split concept
+- `/docs/plans/2026-02-05-function-split-design.md` - Complete feature design (15 sections)
+- `/docs/plans/2026-02-05-split-analysis-implementation.md` - **Implementation Plan** (12 tasks, 35+ steps)
 - `/docs/04-technical-design/architecture.md` - System architecture, database schema, pipeline design
 - `/docs/05-tasks/implementation-checklist.md` - 100+ implementation tasks
 - `/docs/02-ui-design/ui-final.html` - Interactive UI prototype
@@ -370,46 +489,53 @@ This project has strict code style standards. See `AGENTS.md` for comprehensive 
 - Follow AAA pattern (Arrange, Act, Assert)
 - Descriptive test names: `test_login_with_valid_credentials_succeeds`
 
-## Next Implementation Steps
+## Implementation Roadmap
 
-### Immediate (Current Focus)
-1. **Complete backend services** - Finish service implementations (cache, rate_limit, auth)
-2. **API endpoints** - Implement analyze, history, auth endpoints
-3. **Database setup** - Configure Alembic, create initial migrations
-4. **Frontend-backend integration** - Connect stores to backend API
+### Current Sprint: Split Analysis Feature (In Progress)
 
-### Short-term
-5. **Error handling** - Complete error handling in all services
-6. **Authentication flow** - Implement JWT generation/validation end-to-end
-7. **Pipeline integration** - Connect LanguageTool and Zhipu AI with proper error handling
-8. **Testing** - Write comprehensive unit and integration tests
+**Status**: Design Complete, Frontend UI Complete, Backend Pending
 
-See `/docs/05-tasks/implementation-checklist.md` for full task list.
+**Completed** ✅:
+1. ✅ Feature design document (15 sections)
+2. ✅ Implementation plan (12 tasks, 35+ steps)
+3. ✅ Frontend UI components (3 files: RuleEnginePanel, LLMPanel, AIOptimizeButton)
+4. ✅ TypeScript types updated (RuleBasedResult, LLMResult, LearningAnalysis)
+5. ✅ Pinia store updated (new state and actions)
+6. ✅ API client updated (new methods)
+
+**Pending** 🔄:
+1. 🔄 Backend type definitions (LTError, RuleBasedResult, LLMResult, etc.)
+2. 🔄 Database model updates (ea_error_details, ea_learning_recommendations, ea_user_error_trends)
+3. 🔄 Pipeline refactoring (analyze_rules_only, optimize_with_llm methods)
+4. 🔄 LLM learning insights generation
+5. 🔄 API endpoints implementation (/analyze/rules-only, /analyze/optimize-llm)
+6. 🔄 Database migration (Alembic)
+7. 🔄 Testing (unit, integration, API tests)
+
+**Next Steps**:
+- Run `/init` to initialize development environment
+- Execute implementation plan: `docs/plans/2026-02-05-split-analysis-implementation.md`
+- Follow TDD approach: write tests → implement → verify → commit
 
 ## Project Status Summary
 
-**Framework Complete**: ✅
-- 126 files created (18,241 lines)
-- Backend: 50+ Python files with complete module structure
-- Frontend: 40+ Vue/TS files with all components
-- Docker: PostgreSQL 16 configured (Redis removed for V1 MVP)
-- Scripts: dev.sh, verify.sh, test.sh all working
+**Design Complete**: ✅
+- Feature specification: 15 sections covering architecture, API, database, UI
+- Implementation plan: 12 tasks, 35+ steps with complete code
+- UI components: 4 Vue files created with TypeScript
 
-**Pipeline Implementation**: 🔄 In Progress
-- Frontend: Error highlighting, comparison view, input panels implemented
-- Backend: Pipeline stages implemented but need integration testing
-- Services: Cache and rate limit services refactored for in-memory V1
+**Implementation Status**: 🔄 In Progress
+- Frontend: ✅ UI components complete (RuleEnginePanel, LLMPanel, AIOptimizeButton)
+- Frontend: ✅ Types and store updated for split analysis
+- Backend: 🔄 Ready to implement (plan available)
+- Backend: 🔄 Database migration pending
+- Testing: 🔄 Test suite to be written
 
-**Next Milestone**: Frontend Integration & Testing
-- ✅ Analyze endpoint working end-to-end
-- ✅ LLM multi-provider system complete
-- ✅ Rate limiting operational
-- 🔄 Frontend-backend integration needed
-- 🔄 Authentication endpoints need implementation
-- 🔄 Comprehensive test coverage needed
-
-**Branch**: `feature/mvp_v1` (commit: `30aaca5`)
-**Development Guide**: See `AGENTS.md` for detailed coding standards
+**Branch**: `feature/mvp_v1` (commit: updates pending)
+**Documentation**:
+- Design: `docs/plans/2026-02-05-function-split-design.md`
+- Implementation: `docs/plans/2026-02-05-split-analysis-implementation.md`
+- Architecture: `docs/04-technical-design/architecture.md`
 
 ---
 
