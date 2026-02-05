@@ -40,15 +40,23 @@
 
 ### API Contract（建议保持与现有风格一致）
 
-为了让前后端对齐更稳定，建议使用 Pydantic schema 定义强类型响应，而不是 `success/data` 的弱类型包装（现有 `/analyze` 即如此）。
+为避免与现有页面/接口约定产生冲突，需要明确区分两类接口：
+
+1. **Legacy `/analyze`（旧页面/旧流程）**
+   - 保持现状：直接返回 `AnalyzeResponse`（无 `success/data` 包装）。
+
+2. **Split Analysis（新页面/新流程：`/analyze/rules-only` 与 `/analyze/optimize-llm`）**
+   - 与前端现有 split 类型保持一致：HTTP 层仍采用 `{ success, data }` 包装
+   - 同时在后端用 Pydantic 把 `data` 定义成强类型（避免 `Dict[str, Any]` 漫游导致 drift）
+   - 具体做法：定义 `ApiResponse[T]`（Pydantic Generic）+ `RulesOnlyData/OptimizeLLMData` 两个强类型 data model
 
 1. `POST /api/v1/analyze/rules-only`
    - Request: `text`, `mode`, 可选 `language`（用于 RuleEngine 初始化）
-   - Response: `analysis_id`, `original_text`, `corrected_text`, `errors`, `statistics`, `processing_time_ms`, `stage_times`, `created_at`, `estimated_llm_tokens`, `status`
+   - Response: `{ success: true, data: RulesOnlyData }`
 
 2. `POST /api/v1/analyze/optimize-llm`
    - Request: `analysis_id`
-   - Response: `analysis_id`, `optimized_text`, `suggestions/corrections`, `learning_analysis`, `token_usage`, `processing_time_ms`, `status`
+   - Response: `{ success: true, data: OptimizeLLMData }`
 
 ### Data Model（最小改动但满足目标）
 
@@ -197,12 +205,19 @@ context = Column(Text)
 - Modify: `backend/schemas/analysis.py`（或新建 `backend/schemas/split_analysis.py`，二选一）
 
 **Steps:**
-1. 在 schema 中新增以下 Pydantic models（沿用现有 `AnalyzeRequest/AnalyzeResponse` 的风格与字段命名）：
+1. 明确“新旧接口返回格式不同”（避免和旧页面冲突）：
+   - 旧 `/analyze`：继续返回 `AnalyzeResponse`（无 envelope）
+   - 新 split endpoints：返回 `ApiResponse[T]` envelope（与前端 split 类型保持一致）
+2. 在 schema 中新增 `ApiResponse[T]`（Pydantic GenericModel）：
+   - `success: bool`
+   - `data: T`
+   - 可选 `message: str | None`
+3. 在 schema 中新增以下 Pydantic models（作为 `data` 的强类型；字段命名沿用后端 snake_case）：
    - `RulesOnlyRequest`
      - `text: str`（min_length=1, max_length=10000）
      - `mode: str`（默认 "accuracy"，与现有 `Analysis.validate_mode` 对齐）
      - `language: str | None`（默认 "en-US"，用于 RuleEngine 初始化；不传则使用默认）
-   - `RulesOnlyResponse`
+   - `RulesOnlyData`
      - `analysis_id: str`
      - `original_text: str`
      - `corrected_text: str`
@@ -215,7 +230,7 @@ context = Column(Text)
      - `created_at: datetime`
    - `OptimizeLLMRequest`
      - `analysis_id: str`（UUID string）
-   - `OptimizeLLMResponse`
+   - `OptimizeLLMData`
      - `analysis_id: str`
      - `original_text: str`
      - `corrected_text: str`（Phase 2 后最终文本；可直接取 LLM optimized_text）
@@ -226,18 +241,18 @@ context = Column(Text)
      - `processing_time_ms: int`
      - `stage_times: dict[str, int]`
      - `created_at: datetime`
-2. 新增 `LearningAnalysis` 的 schema（仅用于响应与 statistics 存储的结构约定）：
+4. 新增 `LearningAnalysis` 的 schema（仅用于响应与 statistics 存储的结构约定）：
    - `error_patterns: list[...]`
    - `ea_learning_recommendations: list[...]`
    - `personalized_tips: list[str]`
    - 可选 `historical_trend`
-3. 明确错误码与返回约定（写在 schema 附近或本节末）：
+5. 明确错误码与返回约定（写在 schema 附近或本节末）：
    - Phase 1：参数校验失败 422（FastAPI 自动）
    - Phase 2：未登录 401；不属于当前用户 403；analysis_id 不存在 404；状态不允许 409
 
 **Acceptance:**
-- 前后端可以依赖 schema 完成类型对齐，不再需要 `success/data` 弱类型包装。
-- 两个 endpoint 的响应字段足以渲染 Rule 面板与 LLM 面板（errors + corrected_text + learning_analysis + token_usage）。
+- split endpoints 的 HTTP 响应与前端现有 `{ success, data }` 定义一致，同时 `data` 具备强类型约束。
+- 两个 split endpoint 的响应字段足以渲染 Rule 面板与 LLM 面板（errors + corrected_text + learning_analysis + token_usage）。
 
 ### Task 2: Extend DB Models + Migration
 
@@ -330,7 +345,9 @@ context = Column(Text)
      - 不允许重试：409
    - 若 `status != "rule_only"` 且不属于上述 → 409
    - 将 `status` 置为 `"llm_running"` 并 `db.commit()`（防止双击重复扣费）
-4. 调用 LLM（修改 `LLMEngine._optimize_combined` 输出结构）：
+4. 调用 LLM（修改 `LLMEngine._optimize_combined` 输出结构；并明确输入是用户原始文本）：
+   - **LLM 输入必须是 `analysis.original_text`（用户原始输入）**，不是 Phase 1 的 `corrected_text`
+   - 可以把 Phase 1 的 rule_errors（或 error patterns）作为“辅助上下文”传入 prompt，但主文本仍是原始输入
    - prompt 要求输出 `learning_analysis`（见 v2 Concrete Specs 的 JSON 结构）
    - 解析 JSON 后把 `learning_analysis` 作为 dict 带回
    - 建议把 `learning_analysis` 放到 `LLMResult.metadata["learning_analysis"]`，或直接在 `LLMResult` dataclass 增加字段（二选一，保持最小侵入）
