@@ -16,9 +16,16 @@
 
 **Read these docs first:**
 - `docs/plans/2026-02-05-function-split-design.md` - Complete design specification
-- `backend/pipeline/analysis_pipeline.py` - Current pipeline implementation
+- `backend/pipeline/pipeline.py` - Current pipeline implementation (existing)
 - `backend/pipeline/rule_engine.py` - LanguageTool integration
 - `backend/pipeline/llm_engine.py` - LLM integration
+
+**IMPORTANT ADAPTATIONS:**
+- **NEW FILE**: Create `backend/pipeline/analysis_pipeline.py` (new split analysis pipeline)
+- **UUID Primary Keys**: All models use UUID, not Integer (use `str(uuid)` conversions)
+- **Type Naming**: Use `LLMMoreDetailResult` to avoid conflict with existing `LLMResult` in llm_engine.py
+- **ErrorDetail**: Extend existing model with new fields `rule_id`, `category`, `original_text`, `correction`, `message`, `context`
+- **Analysis Model**: Add `status`, `llm_tokens_used`, `llm_cost_usd` to existing model (not create new file)
 
 **Frontend is already complete:**
 - `frontend/src/components/panels/RuleEnginePanel.vue` - Displays LT results
@@ -32,7 +39,7 @@
 ## Task 1: Add New Type Definitions
 
 **Files:**
-- Create: `backend/models/types.py` (if not exists) or modify `backend/models/__init__.py`
+- Create: `backend/models/types.py`
 
 **Step 1: Add new dataclass types**
 
@@ -130,8 +137,8 @@ class ChineseCorrection:
     corrected: str
 
 @dataclass
-class LLMResult:
-    """Result from LLM optimization"""
+class LLMMoreDetailResult:
+    """Result from LLM optimization (renamed to avoid conflict with existing LLMResult)"""
     optimized_text: str
     suggestions: List[LLMSuggestion]
     chinese_corrections: List[ChineseCorrection]
@@ -156,56 +163,49 @@ git commit -m "feat(types): add dataclasses for split analysis feature"
 ## Task 2: Update Database Models
 
 **Files:**
-- Modify: `backend/models/analysis.py` (or wherever Analysis model is defined)
+- Modify: `backend/models/analysis.py` (extend existing Analysis model)
+- Modify: `backend/models/analysis.py` (extend existing ErrorDetail model)
+- Create: `backend/models/learning_recommendation.py` (new model)
+- Create: `backend/models/user_error_trend.py` (new model)
 
-**Step 1: Add status field to Analysis model**
-
-Find the existing `Analysis` class and add:
+**Step 1: Add split analysis fields to existing Analysis model**
 
 ```python
-# backend/models/analysis.py
+# backend/models/analysis.py - Add to existing Analysis class
 
 from sqlalchemy import Column, String, Integer, DECIMAL
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import UUID
 
-class Analysis(Base):
+class Analysis(Base, TimestampMixin, SoftDeleteMixin):
     # ... existing fields ...
 
-    # Add these new fields
-    status = Column(String(20), default='rule_only')  # 'rule_only', 'completed', 'failed'
-    llm_tokens_used = Column(Integer, default=0)
+    # Add these new fields for split analysis
+    status = Column(String(20), default='rule_only', nullable=False)  # 'rule_only', 'completed', 'failed'
+    llm_tokens_used = Column(Integer, default=0, nullable=False)
     llm_cost_usd = Column(DECIMAL(10, 4), default=0)
 ```
 
-**Step 2: Create ErrorDetail model**
+**Step 2: Extend existing ErrorDetail model**
 
 ```python
-# backend/models/error_detail.py
-
-from sqlalchemy import Column, String, Integer, Text, ForeignKey, DateTime
-from sqlalchemy.orm import relationship
-from datetime import datetime
-
-from .base import Base
+# backend/models/analysis.py - Add new fields to existing ErrorDetail class
 
 class ErrorDetail(Base):
     __tablename__ = 'ea_error_details'
 
-    id = Column(Integer, primary_key=True)
-    analysis_id = Column(Integer, ForeignKey('ea_analyses.id', ondelete='CASCADE'))
-    rule_id = Column(String(100))  # LanguageTool rule_id
-    category = Column(String(50))  # GRAMMAR, TYPOS, etc.
-    severity = Column(String(20))  # ERROR, WARNING
-    position_start = Column(Integer)
-    position_end = Column(Integer)
-    original_text = Column(Text)
-    correction = Column(Text)
-    message = Column(Text)
-    context = Column(Text)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    # ... existing fields (id, analysis_id, error_type, error_subtype, original_span,
+    #                       corrected_span, start_index, end_index, etc.) ...
 
-    # Relationship
-    analysis = relationship("Analysis", back_populates="ea_error_details")
+    # Add these new fields for LanguageTool details
+    rule_id = Column(String(100))  # LanguageTool rule_id (e.g., "EN_CONTRACTION_GOT_IT")
+    category = Column(String(50))  # LanguageTool category (GRAMMAR, TYPOS, etc.)
+    message = Column(Text)  # LanguageTool error message
+    context = Column(Text)  # Context surrounding the error
+
+    # Keep existing fields for backward compatibility
+    # error_type maps to category for UI display
+    # original_span maps to original_text
+    # corrected_span maps to correction
 ```
 
 **Step 3: Create LearningRecommendation model**
@@ -214,6 +214,7 @@ class ErrorDetail(Base):
 # backend/models/learning_recommendation.py
 
 from sqlalchemy import Column, String, Integer, Text, ForeignKey, DateTime, DECIMAL, JSONB
+from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from datetime import datetime
 
@@ -222,9 +223,9 @@ from .base import Base
 class LearningRecommendation(Base):
     __tablename__ = 'ea_learning_recommendations'
 
-    id = Column(Integer, primary_key=True)
-    user_id = Column(Integer, ForeignKey('ea_users.id', ondelete='CASCADE'))
-    analysis_id = Column(Integer, ForeignKey('ea_analyses.id', ondelete='CASCADE'))
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey('ea_users.id', ondelete='CASCADE'), nullable=True)
+    analysis_id = Column(UUID(as_uuid=True), ForeignKey('ea_analyses.id', ondelete='CASCADE'), nullable=True)
     pattern_name = Column(String(200))
     frequency = Column(DECIMAL(5, 2))  # Percentage as decimal
     severity = Column(String(20))  # high, medium, low
@@ -232,7 +233,7 @@ class LearningRecommendation(Base):
     resources = Column(JSONB)  # Store as JSON
     priority = Column(Integer)
     estimated_study_time = Column(String(50))
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     # Relationships
     user = relationship("User")
@@ -268,19 +269,17 @@ class UserErrorTrend(Base):
     )
 ```
 
-**Step 5: Update Analysis model relationships**
+**Step 5: Add relationships to Analysis model**
 
 ```python
-# In backend/models/analysis.py, add to Analysis class:
+# In backend/models/analysis.py, add to existing Analysis class relationships:
 
-from sqlalchemy.orm import relationship
-
-class Analysis(Base):
-    # ... existing fields ...
-
-    # Add relationships
-    ea_error_details = relationship("ErrorDetail", back_populates="analysis", cascade="all, delete-orphan")
-    ea_learning_recommendations = relationship("LearningRecommendation", back_populates="analysis", cascade="all, delete-orphan")
+# Add to existing relationships section (after line 96)
+ea_learning_recommendations = relationship(
+    "LearningRecommendation",
+    back_populates="analysis",
+    cascade="all, delete-orphan"
+)
 ```
 
 **Step 6: Run type check**
@@ -295,7 +294,11 @@ Run: `cd backend && poetry run alembic revision --autogenerate -m "add split ana
 **Step 8: Review generated migration**
 
 Check: `backend/alembic/versions/<newest_file>.py`
-Ensure it has: ALTER TABLE ea_analyses, CREATE TABLE ea_error_details, CREATE TABLE ea_learning_recommendations, CREATE TABLE ea_user_error_trends
+Ensure it has:
+- ALTER TABLE ea_analyses ADD COLUMN status, llm_tokens_used, llm_cost_usd
+- ALTER TABLE ea_error_details ADD COLUMN rule_id, category, message, context
+- CREATE TABLE ea_learning_recommendations
+- CREATE TABLE ea_user_error_trends
 
 **Step 9: Commit**
 
@@ -309,7 +312,7 @@ git commit -m "feat(models): add status field and new tables for split analysis"
 ## Task 3: Implement analyze_rules_only in Pipeline
 
 **Files:**
-- Modify: `backend/pipeline/analysis_pipeline.py`
+- Create: `backend/pipeline/analysis_pipeline.py` (NEW FILE - separate from existing pipeline.py)
 
 **Step 1: Add import for new types**
 
@@ -320,7 +323,7 @@ from models.types import (
     RuleBasedResult,
     LTError,
     RuleBasedStatistics,
-    LLMResult,
+    LLMMoreDetailResult,
     LearningAnalysis
 )
 ```
@@ -392,7 +395,7 @@ async def analyze_rules_only(
     self,
     text: str,
     mode: CorrectionMode,
-    user_id: Optional[int] = None,
+    user_id: Optional[UUID] = None,
     session: AsyncSession = None
 ) -> RuleBasedResult:
     """
@@ -454,7 +457,7 @@ async def analyze_rules_only(
     estimated_tokens = self._estimate_llm_tokens(text)
 
     return RuleBasedResult(
-        analysis_id=str(analysis.id),
+        analysis_id=str(analysis.id),  # UUID to string
         errors=lt_errors,
         corrected_text=rule_result.corrected_text,
         statistics=statistics,
@@ -761,15 +764,15 @@ git commit -m "feat(llm): add learning insights generation"
 ## Task 5: Implement optimize_with_llm in Pipeline
 
 **Files:**
-- Modify: `backend/pipeline/analysis_pipeline.py`
+- Modify: `backend/pipeline/analysis_pipeline.py` (append to existing file from Task 3)
 
 **Step 1: Add import for LLM and Learning types**
 
 ```python
-# backend/pipeline/analysis_pipeline.py
+# backend/pipeline/analysis_pipeline.py - Add to imports
 
 from models.types import (
-    LLMResult,
+    LLMMoreDetailResult,
     LLMSuggestion,
     ChineseCorrection,
     LearningAnalysis
@@ -783,20 +786,26 @@ from models.types import (
 
 async def optimize_with_llm(
     self,
-    analysis_id: str,
-    user_id: Optional[int] = None,
+    analysis_id: str,  # UUID as string
+    user_id: Optional[UUID] = None,
     session: AsyncSession = None
-) -> LLMResult:
+) -> LLMMoreDetailResult:
     """
     Run LLM optimization on existing analysis
 
-    Requires valid analysis_id from analyze_rules_only
+    Requires valid analysis_id (UUID string) from analyze_rules_only
     """
     from sqlalchemy import select
     from models.analysis import Analysis
+    import uuid
 
-    # Load existing analysis
-    query = select(Analysis).where(Analysis.id == int(analysis_id))
+    # Load existing analysis (convert string to UUID)
+    try:
+        analysis_uuid = uuid.UUID(analysis_id)
+    except ValueError:
+        raise ValueError(f"Invalid analysis_id format: {analysis_id}")
+
+    query = select(Analysis).where(Analysis.id == analysis_uuid)
     result = await session.execute(query)
     analysis = result.scalar_one_or_none()
 
@@ -826,21 +835,20 @@ async def optimize_with_llm(
     error_result = await session.execute(error_query)
     ea_error_details = error_result.scalars().all()
 
-    # Convert to LTError format
-    lt_errors = [
-        LTError(
-            rule_id=e.rule_id,
-            category=e.category,
+    # Convert to LTError format (using existing ErrorDetail fields)
+    lt_errors = []
+    for e in ea_error_details:
+        lt_errors.append(LTError(
+            rule_id=e.rule_id or f"{e.error_type or 'UNKNOWN'}_{e.error_subtype or 'GENERAL'}",
+            category=e.category or e.error_type or 'UNKNOWN',
             severity=e.severity,
-            position_start=e.position_start,
-            position_end=e.position_end,
-            original_text=e.original_text,
-            replacements=[e.correction] if e.correction else [],
-            message=e.message,
-            context=e.context
-        )
-        for e in ea_error_details
-    ]
+            position_start=e.start_index,
+            position_end=e.end_index,
+            original_text=e.original_span,
+            replacements=[e.corrected_span] if e.corrected_span else [],
+            message=e.message or e.explanation or "",
+            context=e.context or ""
+        ))
 
     learning_analysis = await self.llm_engine.generate_learning_insights(
         lt_errors=lt_errors,
@@ -885,7 +893,7 @@ async def optimize_with_llm(
 
     await session.commit()
 
-    return LLMResult(
+    return LLMMoreDetailResult(
         optimized_text=llm_result.optimized_text,
         suggestions=suggestions,
         chinese_corrections=[],  # Extract from llm_result if available
@@ -1198,8 +1206,9 @@ async def test_analyze_rules_only_with_user(db_session, test_user):
     # Verify analysis is saved to database
     from sqlalchemy import select
     from models.analysis import Analysis
+    import uuid
 
-    query = select(Analysis).where(Analysis.id == int(result.analysis_id))
+    query = select(Analysis).where(Analysis.id == uuid.UUID(result.analysis_id))
     db_result = await db_session.execute(query)
     analysis = db_result.scalar_one()
 
@@ -1525,8 +1534,9 @@ async def test_full_split_analysis_workflow(db_session):
     # Step 3: Verify database state
     from sqlalchemy import select
     from models.analysis import Analysis
+    import uuid
 
-    query = select(Analysis).where(Analysis.id == int(analysis_id))
+    query = select(Analysis).where(Analysis.id == uuid.UUID(analysis_id))
     result = await db_session.execute(query)
     analysis = result.scalar_one()
 
@@ -1552,8 +1562,9 @@ async def test_rules_only_without_optimization(db_session):
     # Verify analysis remains in 'rule_only' state
     from sqlalchemy import select
     from models.analysis import Analysis
+    import uuid
 
-    query = select(Analysis).where(Analysis.id == int(analysis_id))
+    query = select(Analysis).where(Analysis.id == uuid.UUID(analysis_id))
     result = await db_session.execute(query)
     analysis = result.scalar_one()
 
