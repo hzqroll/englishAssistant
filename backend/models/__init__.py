@@ -34,6 +34,10 @@ __all__ = [
     "AnalysisTag",
     "AnalysisCache",
 
+    # LLM Provider models
+    "LLMProvider",
+    "UserLLMConfig",
+
     # Session management
     "get_db",
     "engine",

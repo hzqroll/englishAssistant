@@ -5,7 +5,7 @@ This module contains SQLAlchemy models for LLM provider configurations
 and user LLM settings.
 """
 
-from sqlalchemy import Column, String, Boolean, Text, ForeignKey, UniqueConstraint, Index
+from sqlalchemy import Column, String, Boolean, Text, ForeignKey, UniqueConstraint, Index, JSON
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship, validates, foreign
 from datetime import datetime
@@ -68,7 +68,7 @@ class LLMProvider(Base, TimestampMixin):
     # Supported models (JSONB for flexibility)
     # Format: [{"name": "glm-4-flashx", "display_name": "GLM-4-FlashX", "is_default": True}, ...]
     supported_models = Column(
-        JSONB,
+        JSON().with_variant(JSONB, "postgresql"),
         nullable=False
     )
 

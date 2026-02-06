@@ -13,6 +13,14 @@ from sqlalchemy.orm import Session
 from models import Analysis, AnalysisCache, ErrorDetail, User
 from pipeline import AnalysisPipeline
 from schemas.analysis import AnalyzeRequest, AnalyzeResponse, ErrorDetailResponse
+from schemas.split_analysis import (
+    RulesOnlyRequest, RulesOnlyResponse, RulesOnlyData,
+    OptimizeLLMRequest, OptimizeLLMResponse, OptimizeLLMData
+)
+from fastapi import HTTPException
+import time
+import uuid
+from pipeline.llm_engine import LLMError
 
 logger = logging.getLogger(__name__)
 
@@ -159,6 +167,219 @@ class AnalysisService:
         self._save_to_cache(cache_key, response.dict(), db)
 
         return response
+
+    async def analyze_rules_only(
+        self,
+        request: RulesOnlyRequest,
+        user: Optional[User],
+        db: Session
+    ) -> RulesOnlyResponse:
+        """
+        Phase 1: Rules-only analysis.
+        """
+        start_time = time.time()
+        stage_times = {}
+
+        # Stage 1: Preprocessing
+        stage_start = time.time()
+        preprocessed = self.pipeline.preprocessor.preprocess(request.text)
+        stage_times["preprocessing"] = int((time.time() - stage_start) * 1000)
+
+        # Stage 2: Rule-based checking
+        stage_start = time.time()
+        rule_errors = self.pipeline.rule_engine.check(request.text)
+        stage_times["rule_engine"] = int((time.time() - stage_start) * 1000)
+
+        # Apply corrections
+        corrected_text = self.pipeline._apply_rule_corrections(request.text, rule_errors)
+        
+        # Estimate LLM tokens (Phase 2 preview)
+        # Using simple estimation: 1.3 tokens per word
+        word_count = len(request.text.split())
+        estimated_tokens = int(word_count * 1.3 * 2)  # Input + Output
+        
+        total_time = int((time.time() - start_time) * 1000)
+        
+        # Create Analysis record
+        user_id = user.id if user else None
+        
+        statistics = {
+            "total_errors": len(rule_errors),
+            "error_types": {},  # TODO: Aggregate types
+            "estimated_llm_tokens": estimated_tokens
+        }
+        
+        # Count error types
+        for error in rule_errors:
+            etype = error.metadata.get('category', 'grammar')
+            statistics["error_types"][etype] = statistics["error_types"].get(etype, 0) + 1
+
+        analysis = Analysis(
+            user_id=user_id,
+            original_text=request.text,
+            corrected_text=corrected_text,
+            mode=request.mode,
+            text_type="dialogue" if preprocessed.is_dialogue else "unknown",
+            statistics=statistics,
+            processing_time_ms=total_time,
+            is_cached=False,
+            token_usage={"total_tokens": 0, "estimated_cost": 0.0},
+            status="rule_only"
+        )
+        db.add(analysis)
+        db.flush()
+
+        # Save error details
+        error_responses = []
+        for error in rule_errors:
+            ed = ErrorDetail(
+                analysis_id=analysis.id,
+                error_type=error.error_type.value, 
+                error_subtype=error.error_subtype or "general",
+                original_span=error.original_span,
+                corrected_span=error.corrected_span,
+                start_index=error.start_index,
+                end_index=error.end_index,
+                explanation=error.explanation,
+                rule_description=error.rule_description,
+                severity=error.severity.value,
+                
+                # New fields
+                rule_id=error.metadata.get("rule_id"),
+                category=error.metadata.get("category", "grammar"),
+                message=error.explanation,
+                context=error.metadata.get("context")
+            )
+            # Map specific types if needed
+            if ed.error_type not in ['grammar', 'tense', 'word_choice', 'mixed_language', 'spelling', 'punctuation', 'style']:
+                 ed.error_type = 'grammar' # Fallback
+            
+            db.add(ed)
+            
+            error_responses.append(
+                ErrorDetailResponse(
+                    error_type=ed.error_type,
+                    error_subtype=ed.error_subtype,
+                    original_span=ed.original_span,
+                    corrected_span=ed.corrected_span,
+                    start_index=ed.start_index,
+                    end_index=ed.end_index,
+                    explanation=ed.explanation,
+                    rule_description=ed.rule_description,
+                    severity=ed.severity
+                )
+            )
+            
+        db.commit()
+
+        data = RulesOnlyData(
+            analysis_id=str(analysis.id),
+            original_text=request.text,
+            corrected_text=corrected_text,
+            mode=request.mode,
+            status="rule_only",
+            errors=error_responses,
+            statistics=statistics,
+            processing_time_ms=total_time,
+            stage_times=stage_times,
+            created_at=analysis.created_at
+        )
+        
+        return RulesOnlyResponse(data=data)
+
+    async def optimize_with_llm(
+        self,
+        request: OptimizeLLMRequest,
+        user: User,
+        db: Session
+    ) -> OptimizeLLMResponse:
+        """
+        Phase 2: LLM optimization.
+        """
+        # 1. Ownership & Existence
+        try:
+            analysis_uuid = uuid.UUID(request.analysis_id)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid analysis ID format")
+
+        analysis = db.query(Analysis).filter(Analysis.id == analysis_uuid).first()
+        if not analysis:
+            raise HTTPException(status_code=404, detail="Analysis not found")
+        
+        if analysis.user_id != user.id:
+            raise HTTPException(status_code=403, detail="Not authorized to optimize this analysis")
+
+        # 2. State Machine & Idempotency
+        if analysis.status == "llm_running":
+             raise HTTPException(status_code=409, detail="Optimization already in progress")
+        if analysis.status == "llm_completed":
+             raise HTTPException(status_code=409, detail="Optimization already completed")
+        
+        # Lock status
+        analysis.status = "llm_running"
+        db.commit()
+
+        start_time = time.time()
+        stage_times = {}
+        
+        try:
+            # 3. Call LLM
+            stage_start = time.time()
+            # Use original text for LLM as per plan
+            llm_result = await self.pipeline.llm_engine.optimize(
+                analysis.original_text, 
+                analysis.mode
+            )
+            stage_times["llm"] = int((time.time() - stage_start) * 1000)
+
+            # 4. Update Analysis
+            analysis.corrected_text = llm_result.optimized_text
+            analysis.token_usage = llm_result.token_usage
+            
+            # Update statistics with learning analysis
+            new_stats = dict(analysis.statistics)
+            if "learning_analysis" in llm_result.metadata:
+                new_stats["learning_analysis"] = llm_result.metadata["learning_analysis"]
+            
+            # Add stage times
+            if "stage_times" not in new_stats:
+                new_stats["stage_times"] = {}
+            new_stats["stage_times"].update(stage_times)
+            
+            analysis.statistics = new_stats
+            analysis.status = "llm_completed"
+            analysis.processing_time_ms += int((time.time() - start_time) * 1000)
+            
+            db.commit()
+
+            data = OptimizeLLMData(
+                analysis_id=str(analysis.id),
+                original_text=analysis.original_text,
+                corrected_text=analysis.corrected_text,
+                mode=analysis.mode,
+                status="llm_completed",
+                token_usage=analysis.token_usage,
+                statistics=analysis.statistics,
+                processing_time_ms=analysis.processing_time_ms,
+                stage_times=stage_times,
+                created_at=analysis.created_at
+            )
+            
+            return OptimizeLLMResponse(data=data)
+
+        except Exception as e:
+            # Failed
+            analysis.status = "failed"
+            # Log error in statistics
+            new_stats = dict(analysis.statistics)
+            new_stats["llm_error"] = str(e)
+            analysis.statistics = new_stats
+            db.commit()
+            
+            # If it's an LLMError, we might want to return 500 or 422
+            # Returning 500 for now as per plan
+            logger.error(f"LLM optimization failed: {e}")
+            raise HTTPException(status_code=500, detail=f"Optimization failed: {str(e)}")
 
     def get_history(
         self,

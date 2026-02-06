@@ -37,6 +37,18 @@ const routes: RouteRecordRaw[] = [
     meta: { requiresAuth: true, title: 'Settings' },
   },
   {
+    path: '/split',
+    name: 'SplitAnalysisNotion',
+    component: () => import('@/views/SplitAnalysisNotion.vue'),
+    meta: { requiresAuth: false, title: 'Split Analysis (Notion Sample)' },
+  },
+  {
+    path: '/split-analysis',
+    name: 'SplitAnalysis',
+    component: () => import('@/views/SplitAnalysis.vue'),
+    meta: { requiresAuth: false, title: 'Split Analysis' },
+  },
+  {
     path: '/:pathMatch(.*)*',
     name: 'NotFound',
     redirect: '/',
@@ -72,7 +84,7 @@ router.beforeEach((to, _from, next) => {
   const requiresAuth = to.meta.requiresAuth !== false
 
   if (requiresAuth && !authStore.isAuthenticated) {
-    // TODO: Save intended redirect URL
+    // Save intended redirect URL
     next({ name: 'Auth', query: { redirect: to.fullPath } })
   } else if (to.name === 'Auth' && authStore.isAuthenticated) {
     next({ name: 'Home' })

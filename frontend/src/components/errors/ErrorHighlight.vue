@@ -63,7 +63,6 @@ function applyHighlights(
     if (startPos >= lastIndex && endPos <= text.length) {
       result += text.slice(lastIndex, startPos)
 
-      const errorText = text.slice(startPos, endPos)
       const spanText = isOriginal ? error.originalText : error.correctedText
       const isSelected = props.selectedErrorId === error.id
       const isHovered = hoveredErrorId.value === error.id

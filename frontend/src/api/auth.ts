@@ -31,21 +31,21 @@ export const authApi = {
    * Login user
    */
   async login(data: LoginRequest) {
-    return apiClient.post<AuthResponse>('/auth/login', data)
+    return apiClient.post<AuthResponse>('/api/v1/auth/login', data)
   },
 
   /**
    * Register new user
    */
   async register(data: RegisterRequest) {
-    return apiClient.post<AuthResponse>('/auth/register', data)
+    return apiClient.post<AuthResponse>('/api/v1/auth/register', data)
   },
 
   /**
    * Refresh access token
    */
   async refresh(data: RefreshTokenRequest) {
-    return apiClient.post<{ access_token: string }>('/auth/refresh', data)
+    return apiClient.post<{ access_token: string }>('/api/v1/auth/refresh', data)
   },
 
   /**
@@ -57,6 +57,6 @@ export const authApi = {
       email: string
       tier: 'free' | 'paid'
       created_at: string
-    }>('/auth/me')
+    }>('/api/v1/auth/me')
   },
 }

@@ -26,7 +26,7 @@ export const analysisApi = {
    * Analyze text using LanguageTool only (fast, rule-based)
    */
   async analyzeRulesOnly(data: AnalyzeRequest) {
-    return apiClient.post<{ success: boolean; data: RuleBasedResult }>('/analyze/rules-only', {
+    return apiClient.post<{ success: boolean; data: RuleBasedResult }>('/api/v1/analyze/rules-only', {
       text: data.text,
       language: data.language || 'en-US',
       mode: data.mode
@@ -37,7 +37,7 @@ export const analysisApi = {
    * Optimize with LLM (requires existing analysis_id)
    */
   async optimizeWithLLM(data: OptimizeLLMRequest) {
-    return apiClient.post<{ success: boolean; data: LLMResult }>('/analyze/optimize-llm', {
+    return apiClient.post<{ success: boolean; data: LLMResult }>('/api/v1/analyze/optimize-llm', {
       analysis_id: data.analysis_id
     })
   },

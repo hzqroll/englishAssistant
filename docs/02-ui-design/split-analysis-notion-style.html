@@ -1,0 +1,673 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>English Assistant - Notion Style</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Geist+Mono:wght@400;500&family=Source+Serif+4:wght@400;500;600&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        :root {
+            /* Notion Color Palette */
+            --bg-primary: #FFFFFF;
+            --bg-secondary: #FBFBFB;
+            --bg-tertiary: #F7F7F5;
+            --bg-hover: #EFEFEF;
+            --border-default: #E9E9E9;
+            --border-subtle: #F1F1EF;
+            --text-primary: #37352F;
+            --text-secondary: #787774;
+            --text-tertiary: #9B9A97;
+
+            /* Tag Colors (Notion-style pastels) */
+            --tag-blue-bg: #E7F3F8;
+            --tag-blue-text: #157CB8;
+            --tag-red-bg: #FFE2DD;
+            --tag-red-text: #D44C47;
+            --tag-orange-bg: #FADEC9;
+            --tag-orange-text: #D9730D;
+            --tag-purple-bg: #E8DEEE;
+            --tag-purple-text: #7E5BE6;
+
+            /* Notion AI Purple */
+            --ai-purple: #7E5BE6;
+            --ai-purple-light: #E8DEEE;
+            --ai-purple-gradient: linear-gradient(135deg, #7E5BE6 0%, #9B7CDB 100%);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            font-family: 'Inter', -apple-system, sans-serif;
+            font-size: 14px;
+            line-height: 1.5;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        .font-serif {
+            font-family: 'Source Serif 4', Georgia, serif;
+        }
+
+        .font-mono {
+            font-family: 'Geist Mono', 'SF Mono', monospace;
+        }
+
+        /* Notion-style blocks */
+        .notion-block {
+            padding: 3px 2px;
+            border-radius: 3px;
+            transition: background 0.15s;
+        }
+
+        .notion-block:hover {
+            background: var(--bg-hover);
+        }
+
+        /* Notion-style divider */
+        .notion-divider {
+            height: 1px;
+            background: var(--border-default);
+            margin: 12px 0;
+        }
+
+        /* Notion-style callout */
+        .notion-callout {
+            display: flex;
+            gap: 12px;
+            padding: 16px;
+            border-radius: 4px;
+            background: var(--bg-tertiary);
+        }
+
+        .notion-callout-blue { background: var(--tag-blue-bg); }
+        .notion-callout-red { background: var(--tag-red-bg); }
+        .notion-callout-orange { background: var(--tag-orange-bg); }
+
+        /* Notion-style tags */
+        .notion-tag {
+            display: inline-flex;
+            align-items: center;
+            padding: 2px 8px;
+            border-radius: 3px;
+            font-size: 13px;
+            font-weight: 500;
+            white-space: nowrap;
+        }
+
+        .notion-tag-blue { background: var(--tag-blue-bg); color: var(--tag-blue-text); }
+        .notion-tag-red { background: var(--tag-red-bg); color: var(--tag-red-text); }
+        .notion-tag-orange { background: var(--tag-orange-bg); color: var(--tag-orange-text); }
+        .notion-tag-purple { background: var(--tag-purple-bg); color: var(--tag-purple-text); }
+        .notion-tag-gray { background: var(--bg-tertiary); color: var(--text-secondary); }
+
+        /* Notion-style toggle */
+        .notion-toggle {
+            display: flex;
+            align-items: flex-start;
+            gap: 8px;
+            padding: 4px 0;
+            cursor: pointer;
+        }
+
+        .notion-toggle:hover {
+            background: var(--bg-hover);
+            margin: 0 -8px;
+            padding: 4px 8px;
+            border-radius: 3px;
+        }
+
+        .notion-toggle-icon {
+            transition: transform 0.2s;
+            color: var(--text-tertiary);
+        }
+
+        .notion-toggle.open .notion-toggle-icon {
+            transform: rotate(90deg);
+        }
+
+        /* Notion-style button */
+        .notion-button {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 12px;
+            border-radius: 4px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.15s;
+            border: none;
+        }
+
+        .notion-button-primary {
+            background: var(--text-primary);
+            color: white;
+        }
+
+        .notion-button-primary:hover {
+            background: #1F1F1F;
+        }
+
+        .notion-button-secondary {
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
+        }
+
+        .notion-button-secondary:hover {
+            background: var(--bg-hover);
+        }
+
+        /* Notion AI Button */
+        .notion-ai-button {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 10px;
+            background: var(--ai-purple-light);
+            color: var(--ai-purple);
+            border-radius: 4px;
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.15s;
+            border: 1px solid transparent;
+        }
+
+        .notion-ai-button:hover {
+            background: #D4C7E9;
+            border-color: var(--ai-purple);
+        }
+
+        /* Panel styling */
+        .panel {
+            height: 100%;
+            overflow-y: auto;
+            border-right: 1px solid var(--border-default);
+        }
+
+        .panel::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        .panel::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        .panel::-webkit-scrollbar-thumb {
+            background: var(--border-default);
+            border-radius: 4px;
+        }
+
+        .panel::-webkit-scrollbar-thumb:hover {
+            background: var(--text-tertiary);
+        }
+
+        /* Slash command hint */
+        .slash-hint {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 8px;
+            background: var(--bg-tertiary);
+            border-radius: 4px;
+            font-size: 12px;
+            color: var(--text-secondary);
+            font-family: 'Geist Mono', monospace;
+        }
+
+        /* Database view style */
+        .database-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 12px 16px;
+            border-bottom: 1px solid var(--border-default);
+            background: var(--bg-secondary);
+        }
+
+        .database-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .database-table th {
+            text-align: left;
+            padding: 8px 12px;
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--text-secondary);
+            border-bottom: 1px solid var(--border-default);
+        }
+
+        .database-table td {
+            padding: 8px 12px;
+            border-bottom: 1px solid var(--border-subtle);
+        }
+
+        /* Streaming text animation */
+        @keyframes cursor-blink {
+            0%, 50% { opacity: 1; }
+            51%, 100% { opacity: 0; }
+        }
+
+        .streaming-cursor {
+            display: inline-block;
+            width: 2px;
+            height: 1em;
+            background: var(--ai-purple);
+            animation: cursor-blink 1s infinite;
+            margin-left: 2px;
+            vertical-align: text-bottom;
+        }
+
+        /* Floating AI menu */
+        .ai-floating-menu {
+            position: absolute;
+            bottom: 100%;
+            right: 0;
+            margin-bottom: 8px;
+            background: white;
+            border: 1px solid var(--border-default);
+            border-radius: 6px;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+            overflow: hidden;
+            opacity: 0;
+            pointer-events: none;
+            transform: translateY(4px);
+            transition: all 0.2s;
+        }
+
+        .ai-trigger-wrapper:hover .ai-floating-menu {
+            opacity: 1;
+            pointer-events: auto;
+            transform: translateY(0);
+        }
+
+        .ai-menu-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 8px 12px;
+            font-size: 14px;
+            color: var(--text-primary);
+            cursor: pointer;
+            white-space: nowrap;
+        }
+
+        .ai-menu-item:hover {
+            background: var(--bg-tertiary);
+        }
+
+        /* Sparkle animation */
+        @keyframes sparkle {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.5; transform: scale(1.2); }
+        }
+
+        .sparkle-icon {
+            animation: sparkle 2s ease-in-out infinite;
+        }
+
+        /* Error underline in Notion style */
+        .error-underline {
+            background: linear-gradient(to bottom, transparent 60%, rgba(220, 38, 38, 0.3) 60%);
+            cursor: pointer;
+        }
+
+        /* Selection style */
+        ::selection {
+            background: var(--ai-purple-light);
+        }
+    </style>
+</head>
+<body>
+    <div class="flex flex-col h-screen">
+
+        <!-- Top Navigation Bar (Notion-style) -->
+        <header class="h-11 border-b border-[var(--border-default)] flex items-center px-3 justify-between bg-white sticky top-0 z-50">
+            <div class="flex items-center gap-2">
+                <div class="w-5 h-5 rounded bg-gradient-to-br from-[var(--ai-purple)] to-[#9B7CDB] flex items-center justify-center">
+                    <span class="text-white text-[10px] font-bold">E</span>
+                </div>
+                <span class="text-[13px] font-medium text-[var(--text-secondary)]">English Assistant</span>
+                <span class="text-[11px] text-[var(--text-tertiary)]">/</span>
+                <span class="text-[13px] text-[var(--text-primary)]">Split Analysis</span>
+            </div>
+            <div class="flex items-center gap-2">
+                <div class="slash-hint">
+                    <span>/</span>
+                    <span>commands</span>
+                </div>
+                <button class="notion-button notion-button-secondary">
+                    <i data-lucide="share-2" class="w-4 h-4"></i>
+                    Share
+                </button>
+                <div class="w-6 h-6 rounded-full bg-[var(--bg-tertiary)] flex items-center justify-center">
+                    <span class="text-[11px]">👤</span>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Content - Three Panels -->
+        <div class="flex-1 flex overflow-hidden">
+
+            <!-- Panel 1: Draft / Input (30%) -->
+            <div class="w-[30%] panel bg-white">
+                <div class="sticky top-0 bg-white border-b border-[var(--border-default)] z-10">
+                    <div class="flex items-center gap-2 px-4 py-2">
+                        <span class="text-lg">📝</span>
+                        <input type="text" value="Draft" class="text-[13px] font-medium bg-transparent border-none outline-none text-[var(--text-primary)] flex-1" placeholder="Untitled">
+                        <span class="text-[11px] text-[var(--text-tertiary)] font-mono">Draft</span>
+                    </div>
+                    <div class="flex gap-1 px-4 pb-2">
+                        <button class="px-2 py-1 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)] rounded">Write</button>
+                        <button class="px-2 py-1 text-[11px] bg-[var(--bg-tertiary)] text-[var(--text-primary)] rounded">Edit</button>
+                    </div>
+                </div>
+
+                <div class="p-8 min-h-full">
+                    <!-- Notion-style editor -->
+                    <div class="notion-block">
+                        <h1 class="text-2xl font-medium mb-4 text-[var(--text-primary)]">Project Discussion</h1>
+                    </div>
+
+                    <div class="notion-block font-serif text-[15px] leading-relaxed text-[var(--text-primary)]">
+                        <p class="mb-3">
+                            I would like to <span class="error-underline">discuss about</span> the project plan for next week.
+                        </p>
+                        <p class="mb-3">
+                            Actually, I have already <span class="error-underline">send</span> the email to client yesterday but they didn't <span class="error-underline">reply me</span> yet.
+                        </p>
+                        <p>
+                            Maybe we can <span class="error-underline" style="background: linear-gradient(to bottom, transparent 60%, rgba(217, 119, 6, 0.3) 60%);">meeting together</span> to figure out <span class="error-underline" style="background: linear-gradient(to bottom, transparent 60%, rgba(217, 119, 6, 0.3) 60%);">how to do</span>.
+                        </p>
+                    </div>
+
+                    <!-- Empty state hint -->
+                    <div class="mt-8 flex items-center gap-2 text-[var(--text-tertiary)]">
+                        <span class="text-sm">Press</span>
+                        <span class="slash-hint text-[11px]">/</span>
+                        <span class="text-sm">for commands</span>
+                    </div>
+                </div>
+
+                <!-- Bottom Action Bar -->
+                <div class="sticky bottom-0 bg-white border-t border-[var(--border-default)] p-3 flex items-center justify-between">
+                    <div class="flex items-center gap-3 text-[var(--text-secondary)]">
+                        <span class="text-[11px]">34 words</span>
+                        <span class="text-[var(--text-tertiary)]">·</span>
+                        <span class="text-[11px]">~1 min read</span>
+                    </div>
+                    <button class="notion-button notion-button-primary">
+                        <i data-lucide="play" class="w-4 h-4"></i>
+                        Analyze
+                    </button>
+                </div>
+            </div>
+
+            <!-- Panel 2: Rule Engine Database View (35%) -->
+            <div class="w-[35%] panel bg-[var(--bg-secondary)]">
+                <div class="sticky top-0 bg-[var(--bg-secondary)] border-b border-[var(--border-default)] z-10">
+                    <div class="database-header">
+                        <span class="text-lg">🔍</span>
+                        <span class="text-[13px] font-medium">Grammar Check</span>
+                        <div class="flex-1"></div>
+                        <span class="notion-tag notion-tag-red">3 errors</span>
+                        <span class="notion-tag notion-tag-orange">1 warning</span>
+                    </div>
+                    <div class="flex gap-2 px-4 py-2">
+                        <button class="px-2 py-1 text-[11px] text-[var(--text-primary)] bg-[var(--bg-hover)] rounded">Table</button>
+                        <button class="px-2 py-1 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)] rounded">Board</button>
+                        <button class="px-2 py-1 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)] rounded">List</button>
+                    </div>
+                </div>
+
+                <div class="p-4 space-y-3">
+                    <!-- Summary Callout -->
+                    <div class="notion-callout">
+                        <span>📊</span>
+                        <div class="flex-1">
+                            <div class="text-[13px] font-medium text-[var(--text-primary)] mb-1">Analysis Summary</div>
+                            <div class="text-[13px] text-[var(--text-secondary)]">Found 3 grammar errors and 1 style warning in your text. Estimated AI optimization: <span class="font-mono">~15 tokens</span></div>
+                        </div>
+                    </div>
+
+                    <!-- Error Items (Notion block style) -->
+                    <div class="space-y-1">
+                        <!-- Error 1 -->
+                        <div class="notion-toggle open">
+                            <i data-lucide="chevron-right" class="w-4 h-4 notion-toggle-icon mt-0.5"></i>
+                            <div class="flex-1">
+                                <div class="flex items-center gap-2 mb-1">
+                                    <span class="notion-tag notion-tag-red">Grammar</span>
+                                    <span class="text-[13px] text-[var(--text-primary)]">Redundant preposition</span>
+                                </div>
+                                <div class="text-[13px] text-[var(--text-secondary)] mb-2">"discuss about" → "discuss"</div>
+                            </div>
+                        </div>
+                        <div class="ml-6 p-3 bg-white rounded border border-[var(--border-default)] mb-3">
+                            <div class="flex items-center gap-2 mb-2 font-mono text-[12px] text-[var(--text-tertiary)]">
+                                <span>#LT-204</span>
+                                <span>·</span>
+                                <span>High severity</span>
+                            </div>
+                            <p class="text-[13px] text-[var(--text-secondary)] mb-2">The verb "discuss" is transitive and does not require the preposition "about".</p>
+                            <div class="flex gap-2">
+                                <span class="notion-tag notion-tag-gray">Rule: MORPHOLOGY_ENGLISH</span>
+                            </div>
+                        </div>
+
+                        <!-- Error 2 -->
+                        <div class="notion-toggle open">
+                            <i data-lucide="chevron-right" class="w-4 h-4 notion-toggle-icon mt-0.5"></i>
+                            <div class="flex-1">
+                                <div class="flex items-center gap-2 mb-1">
+                                    <span class="notion-tag notion-tag-red">Verb Form</span>
+                                    <span class="text-[13px] text-[var(--text-primary)]">Present perfect tense</span>
+                                </div>
+                                <div class="text-[13px] text-[var(--text-secondary)] mb-2">"have send" → "have sent"</div>
+                            </div>
+                        </div>
+                        <div class="ml-6 p-3 bg-white rounded border border-[var(--border-default)] mb-3">
+                            <div class="flex items-center gap-2 mb-2 font-mono text-[12px] text-[var(--text-tertiary)]">
+                                <span>#LT-089</span>
+                                <span>·</span>
+                                <span>High severity</span>
+                            </div>
+                            <p class="text-[13px] text-[var(--text-secondary)] mb-2">After "have", use the past participle form "sent" instead of base form "send".</p>
+                            <div class="flex gap-2">
+                                <span class="notion-tag notion-tag-gray">Rule: IRREGULAR_VERBS</span>
+                            </div>
+                        </div>
+
+                        <!-- Error 3 -->
+                        <div class="notion-toggle">
+                            <i data-lucide="chevron-right" class="w-4 h-4 notion-toggle-icon mt-0.5"></i>
+                            <div class="flex-1">
+                                <div class="flex items-center gap-2 mb-1">
+                                    <span class="notion-tag notion-tag-red">Phrasing</span>
+                                    <span class="text-[13px] text-[var(--text-primary)]">Reply someone</span>
+                                </div>
+                                <div class="text-[13px] text-[var(--text-secondary)]">"reply me" → "reply to me"</div>
+                            </div>
+                        </div>
+
+                        <!-- Error 4 - Warning -->
+                        <div class="notion-toggle">
+                            <i data-lucide="chevron-right" class="w-4 h-4 notion-toggle-icon mt-0.5"></i>
+                            <div class="flex-1">
+                                <div class="flex items-center gap-2 mb-1">
+                                    <span class="notion-tag notion-tag-orange">Style</span>
+                                    <span class="text-[13px] text-[var(--text-primary)]">Meeting together</span>
+                                </div>
+                                <div class="text-[13px] text-[var(--text-secondary)]">"meeting" → "have a meeting"</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Floating AI Trigger -->
+                    <div class="ai-trigger-wrapper relative mt-6">
+                        <div class="ai-floating-menu">
+                            <div class="ai-menu-item">
+                                <span>✨</span>
+                                <span>Improve writing</span>
+                                <span class="ml-auto text-[var(--text-tertiary)] text-[11px]">~15 tokens</span>
+                            </div>
+                            <div class="ai-menu-item">
+                                <span>📝</span>
+                                <span>Fix grammar only</span>
+                            </div>
+                            <div class="ai-menu-item">
+                                <span>🌍</span>
+                                <span>Translate to Chinese</span>
+                            </div>
+                        </div>
+                        <button class="notion-ai-button w-full justify-center">
+                            <span class="sparkle-icon">✨</span>
+                            <span>AI: Improve writing</span>
+                            <span class="ml-auto text-[11px] opacity-70">↵</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Panel 3: Notion AI Results (35%) -->
+            <div class="w-[35%] panel bg-white">
+                <div class="sticky top-0 bg-white border-b border-[var(--border-default)] z-10">
+                    <div class="flex items-center gap-2 px-4 py-2">
+                        <span class="text-lg sparkle-icon">✨</span>
+                        <span class="text-[13px] font-medium text-[var(--ai-purple)]">Notion AI</span>
+                        <span class="text-[11px] text-[var(--text-tertiary)]">/</span>
+                        <span class="text-[13px] text-[var(--text-primary)]">Results</span>
+                    </div>
+                    <!-- Loading indicator -->
+                    <div class="px-4 pb-2">
+                        <div class="flex items-center gap-2 text-[var(--text-secondary)]">
+                            <div class="w-2 h-2 rounded-full bg-[var(--ai-purple)] animate-pulse"></div>
+                            <span class="text-[12px]">AI is thinking...</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="p-4 space-y-4">
+                    <!-- AI Response Block -->
+                    <div class="border border-[var(--border-default)] rounded-lg overflow-hidden">
+                        <div class="bg-[var(--ai-purple-light)] px-3 py-2 flex items-center gap-2">
+                            <span>✨</span>
+                            <span class="text-[12px] font-medium text-[var(--ai-purple)]">AI-generated rewrite</span>
+                        </div>
+                        <div class="p-4 font-serif text-[15px] leading-relaxed text-[var(--text-primary)]">
+                            I'd like to discuss the project plan for next week. I actually sent the email to the client yesterday, but haven't heard back yet. Perhaps we could meet to figure out our next steps.<span class="streaming-cursor"></span>
+                        </div>
+                    </div>
+
+                    <!-- Learning Analysis Toggle -->
+                    <div class="notion-toggle open">
+                        <i data-lucide="chevron-right" class="w-4 h-4 notion-toggle-icon mt-0.5"></i>
+                        <div class="flex-1 flex items-center gap-2">
+                            <span>💡</span>
+                            <span class="text-[13px] font-medium">Learning Analysis</span>
+                        </div>
+                    </div>
+
+                    <div class="ml-6 space-y-3">
+                        <!-- Pattern Callout -->
+                        <div class="notion-callout notion-callout-blue">
+                            <span>📈</span>
+                            <div class="flex-1">
+                                <div class="text-[13px] font-medium text-[var(--text-primary)] mb-1">Top Pattern: Redundant Prepositions</div>
+                                <div class="text-[13px] text-[var(--text-secondary)]">Frequency: <strong>43%</strong> of your errors</div>
+                                <div class="mt-2 text-[13px] text-[var(--text-secondary)]">
+                                    You frequently add unnecessary prepositions after transitive verbs.
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Examples table (Notion database style) -->
+                        <div class="border border-[var(--border-default)] rounded-lg overflow-hidden">
+                            <table class="database-table">
+                                <thead>
+                                    <tr>
+                                        <th class="w-12"></th>
+                                        <th>Incorrect</th>
+                                        <th>Correct</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td class="text-red-500">✕</td>
+                                        <td class="text-[var(--text-secondary)]">discuss about</td>
+                                        <td class="text-[var(--text-primary)]">discuss</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="text-red-500">✕</td>
+                                        <td class="text-[var(--text-secondary)]">mention about</td>
+                                        <td class="text-[var(--text-primary)]">mention</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="text-green-500">✓</td>
+                                        <td class="text-[var(--text-secondary)]">talk about</td>
+                                        <td class="text-[var(--text-primary)]">talk about ✓</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <!-- Learning Recommendation -->
+                        <div class="notion-callout">
+                            <span>📚</span>
+                            <div class="flex-1">
+                                <div class="text-[13px] font-medium text-[var(--text-primary)] mb-1">Study Resource</div>
+                                <div class="text-[13px] text-[var(--text-secondary)]">
+                                    <a href="#" class="text-[var(--ai-purple)] underline">Transitive vs Intransitive Verbs</a>
+                                    <span class="text-[var(--text-tertiary)]"> · 15 min read</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Tips Toggle -->
+                    <div class="notion-toggle">
+                        <i data-lucide="chevron-right" class="w-4 h-4 notion-toggle-icon mt-0.5"></i>
+                        <div class="flex-1 flex items-center gap-2">
+                            <span>💬</span>
+                            <span class="text-[13px] font-medium">Personalized Tips</span>
+                            <span class="notion-tag notion-tag-purple">2 new</span>
+                        </div>
+                    </div>
+
+                    <!-- Token Usage -->
+                    <div class="notion-divider"></div>
+                    <div class="flex items-center justify-between text-[11px] text-[var(--text-tertiary)]">
+                        <span>Tokens used</span>
+                        <span class="font-mono">15 / 1,240</span>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+
+    </div>
+
+    <script>
+        lucide.createIcons();
+
+        // Toggle functionality
+        document.querySelectorAll('.notion-toggle').forEach(toggle => {
+            toggle.addEventListener('click', () => {
+                toggle.classList.toggle('open');
+            });
+        });
+    </script>
+</body>
+</html>

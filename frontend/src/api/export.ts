@@ -17,6 +17,6 @@ export const exportApi = {
    * Export analysis result
    */
   async export(data: ExportRequest) {
-    return apiClient.post<{ success: boolean; data: { download_url: string } }>('/export', data)
+    return apiClient.post<{ success: boolean; data: { download_url: string } }>('/api/v1/export', data)
   },
 }

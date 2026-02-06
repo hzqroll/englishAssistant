@@ -17,13 +17,13 @@ export const settingsApi = {
    * Get user settings
    */
   async get() {
-    return apiClient.get<{ success: boolean; data: UserSettings }>('/settings')
+    return apiClient.get<{ success: boolean; data: UserSettings }>('/api/v1/settings')
   },
 
   /**
    * Update user settings
    */
   async update(data: Partial<UserSettings>) {
-    return apiClient.put<{ success: boolean; data: UserSettings }>('/settings', data)
+    return apiClient.put<{ success: boolean; data: UserSettings }>('/api/v1/settings', data)
   },
 }

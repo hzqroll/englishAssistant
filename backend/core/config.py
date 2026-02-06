@@ -32,7 +32,7 @@ class Settings(BaseSettings):
     # Zhipu AI
     ZHIPUAI_API_KEY: str = Field(default="", description="Zhipu AI API key")
     ZHIPUAI_MODEL: str = Field(default="glm-4-flash", description="Zhipu AI model to use")
-    ZHIPUAI_TIMEOUT: int = Field(default=30, description="Zhipu AI request timeout in seconds")
+    ZHIPUAI_TIMEOUT: int = Field(default=300, description="Zhipu AI request timeout in seconds")
     ZHIPUAI_MAX_RETRIES: int = Field(default=3, description="Zhipu AI max retry attempts")
 
     # Security

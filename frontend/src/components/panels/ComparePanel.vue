@@ -129,7 +129,7 @@ function handleReanalyze() {
           <ErrorHighlight
             :original-text="originalText"
             :corrected-text="correctedText"
-            :errors="currentResult.errors"
+            :errors="currentResult?.errors || []"
             :view-mode="viewMode"
           />
         </div>

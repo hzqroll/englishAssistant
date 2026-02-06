@@ -36,7 +36,7 @@ describe('historyStore', () => {
         page: 1,
         page_size: 10
       }
-    })
+    } as any)
 
     await store.fetchHistory(1)
 
@@ -60,12 +60,12 @@ describe('historyStore', () => {
     ]
     store.total = 2
 
-    vi.mocked(historyApi.delete).mockResolvedValue({ success: true })
+    vi.mocked(historyApi.delete).mockResolvedValue({ data: { success: true } } as any)
 
     await store.deleteHistoryItem('1')
 
     expect(store.items).toHaveLength(1)
-    expect(store.items[0].id).toBe('2')
+    expect(store.items[0]!.id).toBe('2')
     expect(store.total).toBe(1)
   })
 })

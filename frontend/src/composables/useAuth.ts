@@ -19,14 +19,24 @@ export function useAuth() {
 
   // Actions
   async function login(email: string, password: string) {
-    await authStore.login(email, password)
-    // TODO: Redirect to intended page or home
-    router.push({ name: 'Home' })
+    await authStore.login({ email, password })
+    // Check if there's a redirect query param
+    const redirect = router.currentRoute.value.query.redirect as string
+    if (redirect) {
+      router.push(redirect)
+    } else {
+      router.push({ name: 'Home' })
+    }
   }
 
   async function register(email: string, password: string, username: string) {
-    await authStore.register(email, password, username)
-    router.push({ name: 'Home' })
+    await authStore.register({ email, password, username })
+    const redirect = router.currentRoute.value.query.redirect as string
+    if (redirect) {
+      router.push(redirect)
+    } else {
+      router.push({ name: 'Home' })
+    }
   }
 
   async function logout() {

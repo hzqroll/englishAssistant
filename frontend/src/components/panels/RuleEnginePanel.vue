@@ -99,13 +99,6 @@ const errorCategories = computed(() => {
 
   return categories.filter(cat => cat.count > 0)
 })
-
-const filteredErrors = computed(() => {
-  if (!selectedCategory.value) return []
-
-  const category = errorCategories.value.find(cat => cat.key === selectedCategory.value)
-  return category ? category.errors : []
-})
 </script>
 
 <template>
@@ -239,11 +232,11 @@ const filteredErrors = computed(() => {
                   <div class="flex items-start justify-between gap-2 mb-2">
                     <div class="flex-1">
                       <p class="text-sm text-slate-300 mb-1">
-                        <span :class="`text-${category.colorClass}-400 font-medium`">{{ error.original_text || error.context?.text }}</span>
+                        <span :class="`text-${category.colorClass}-400 font-medium`">{{ error.original_text || error.context }}</span>
                         <svg class="w-4 h-4 inline mx-1 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"/>
                         </svg>
-                        <span class="text-green-400 font-medium">{{ error.replacements?.[0] || error.correction }}</span>
+                        <span class="text-green-400 font-medium">{{ error.replacements?.[0] || '' }}</span>
                       </p>
                       <p class="text-xs text-slate-500">{{ error.message }}</p>
                     </div>
@@ -253,8 +246,8 @@ const filteredErrors = computed(() => {
                   </div>
 
                   <!-- 规则信息 -->
-                  <div v-if="error.ruleId" class="flex items-center gap-2 text-xs text-slate-600 mt-2 pt-2 border-t border-slate-800">
-                    <code class="px-1.5 py-0.5 bg-slate-800 rounded text-slate-500">{{ error.ruleId }}</code>
+                  <div v-if="error.rule_id" class="flex items-center gap-2 text-xs text-slate-600 mt-2 pt-2 border-t border-slate-800">
+                    <code class="px-1.5 py-0.5 bg-slate-800 rounded text-slate-500">{{ error.rule_id }}</code>
                     <span>•</span>
                     <span class="text-slate-600">{{ error.category }}</span>
                   </div>

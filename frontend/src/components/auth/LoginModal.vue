@@ -9,10 +9,6 @@ const { login, register } = useAuth()
 const uiStore = useUIStore()
 const isLogin = ref(true)
 
-function toggleMode() {
-  isLogin.value = !isLogin.value
-}
-
 async function handleLogin(data: { email: string; password: string }) {
   await login(data.email, data.password)
   uiStore.closeLoginModal()

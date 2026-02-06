@@ -30,7 +30,7 @@ const handleClick = () => {
   >
     <!-- 未启用状态（灰色） -->
     <button
-      v-if="!canOptimize && !isCompleted"
+      v-if="!canOptimize && !isCompleted && !isLoading"
       disabled
       class="optimize-btn btn-disabled"
     >

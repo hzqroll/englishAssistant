@@ -439,6 +439,170 @@ context = Column(Text)
 
 ---
 
+## Notion-Style UI/UX Spec (Split Analysis Page)
+
+本节描述“新页面（Split Analysis）”的页面结构、组件契约与交互细则，目标是对齐 Notion 的简洁块（block）体验，同时不与旧页面 `/analyze` 的交互/返回格式混淆。
+
+### Page Layout（3-column, Notion-like）
+
+1. **Left Sidebar（可折叠）**
+   - 最近分析（History）
+   - 草稿（Drafts，本地）
+   - 模板（Templates，可选）
+
+2. **Center Page（编辑区）**
+   - Page Title：`English Transfer Assistant`
+   - InputBlock：唯一可编辑主块（用户输入）
+   - Inline status row：Phase 1/2 运行中提示（不使用大弹窗打断）
+
+3. **Right Panel（Insights，可折叠）**
+   - RuleFindingsBlock（Phase 1）
+   - OptimizeBlock（Phase 2 触发入口 + token 提示 + 状态）
+   - LLMResultBlock（Phase 2 结果）
+   - LearningBlock（学习建议）
+
+### Component Mapping（复用现有组件）
+
+目标是尽量复用现有组件结构，把 “Notion 风格”落在布局与交互而不是重写业务。
+
+- `InputPanel.vue` → InputBlock（Center）
+- `RuleEnginePanel.vue` → RuleFindingsBlock（Right）
+- `LLMPanel.vue` → LLMResultBlock + LearningBlock（Right）
+- `AIOptimizeButton.vue` → 合并进 OptimizeBlock（Right，块内按钮；不悬浮）
+
+建议新增一个页面级容器组件（命名可自定，例如 SplitAnalysisPage），负责三栏布局与快捷键绑定；现有 panels 作为内容块。
+
+### Store & Data Flow（Split Analysis 专用）
+
+在 `analysisStore` 里“新 split 状态”已经存在（ruleResult/llmResult/isOptimizing/llmError），建议补齐并统一职责：
+
+- `draftText: string`（输入框内容）
+- `ruleResult: RuleBasedResult | null`（Phase 1 data）
+- `llmResult: LLMResult | null`（Phase 2 data）
+- `isAnalyzing: boolean`（Phase 1 running）
+- `isOptimizing: boolean`（Phase 2 running）
+- `error: string | null`（Phase 1 error）
+- `llmError: string | null`（Phase 2 error）
+
+数据流（Notion 风格强调“局部更新”）：
+- Phase 1 只更新 RuleFindingsBlock 与 OptimizeBlock（可用性/预估 tokens）
+- Phase 2 只更新 LLMResultBlock 与 LearningBlock（并更新页面状态徽标）
+
+### API Response Contract（避免新旧页面混淆）
+
+- 旧页面：`/analyze` 返回 `AnalyzeResponse`（无 envelope）
+- 新页面（split endpoints）：`/analyze/rules-only` 与 `/analyze/optimize-llm` 返回 `{ success, data }`
+
+前端调用约定：
+- `response.data.success === true` 时取 `response.data.data` 作为块渲染数据
+- `success === false` 或 http error：显示块内 error row（不弹窗阻断）
+
+### Block Behaviors（每个块的交互细则）
+
+#### InputBlock（InputPanel）
+
+Props（示例，命名以现有组件为准）：
+- `modelValue: string`
+- `mode: CorrectionMode`
+- `isAnalyzing: boolean`
+- `canAnalyze: boolean`
+
+Events：
+- `@analyze-rules(text, mode)`：触发 Phase 1
+- `@clear`
+- `@update:modelValue`
+- `@update:mode`
+
+交互细节：
+- `Cmd/Ctrl+Enter`：触发 Phase 1（仅当 canAnalyze）
+- 粘贴超长：块内轻提示（toast 可选，但不强制）
+
+#### RuleFindingsBlock（RuleEnginePanel）
+
+Props：
+- `ruleResult: RuleBasedResult | null`
+- `isAnalyzing: boolean`
+- `error: string | null`
+
+Events（块内操作）：
+- `@select-error(errorId)`：定位到输入文本相应区间并高亮
+- `@apply-suggestion(errorId, replacementIndex?)`：可选（如实现“应用建议”）
+- `@ignore-error(errorId)`：可选（前端局部忽略，不一定落库）
+
+交互细节（Notion 味道核心）：
+- 错误条目 hover 才显示操作柄：`Locate / Apply / Ignore / Copy`
+- 错误条目 click：右侧聚焦 + 中间滚动定位
+- 错误条目 Enter：应用默认替换（聚焦态）
+- 右键菜单（ContextMenu）：
+  - Apply suggestion (default)
+  - Copy original span
+  - Copy corrected span
+  - Ignore / Unignore
+  - Feedback: inaccurate (optional)
+
+#### OptimizeBlock（AI Optimize）
+
+Props：
+- `analysisId: string | null`
+- `estimatedTokens: number | null`
+- `isOptimizing: boolean`
+- `canOptimize: boolean`
+- `llmError: string | null`
+
+Events：
+- `@optimize(analysisId)`：触发 Phase 2
+- `@retry(analysisId)`
+
+交互细节：
+- 显示轻量 “Uses credits” 提示（小字）
+- 点击后生成 `Optimizing…` 行内块（可取消可不做）
+- Phase 2 失败：块内显示错误条 + Retry（不清空 Phase 1）
+
+#### LLMResultBlock + LearningBlock（LLMPanel）
+
+Props：
+- `llmResult: LLMResult | null`
+- `isOptimizing: boolean`
+
+渲染结构建议：
+- LLMResultBlock：optimized_text 摘要 + corrections 列表（可折叠）
+- LearningBlock：Top 3 recommendations + tips（每条建议可展开例句/练习）
+
+### Keyboard Shortcuts & Command Palette（最小集）
+
+- `Cmd/Ctrl+Enter`：Analyze with Rules（Phase 1）
+- `Cmd/Ctrl+K`：Command Palette（actions）
+  - Analyze with Rules
+  - Optimize with AI（当 canOptimize）
+  - Export（可选）
+  - Clear draft
+- `Esc`：关闭命令面板/退出错误条目聚焦
+- `↑/↓`：在错误条目间导航（右侧面板聚焦态）
+
+### Error-to-Text定位与高亮（实现约束）
+
+当前错误结构以 `start_index/end_index` 为定位依据（来自 LanguageTool 匹配）。为了保持 Notion 的“就地定位”体验：
+- 点击错误条目：中间输入区滚动到大致位置，并在文本上做一次短暂高亮（1–2s）
+- 若实现“应用替换”：建议以“重分析”为最终一致性手段（应用后自动触发 Phase 1），避免在前端做复杂字符串 diff 导致索引漂移
+
+### Empty/Error/Loading Copy（块内提示，短句）
+
+- Empty:
+  - RuleFindingsBlock：`No results yet`
+  - OptimizeBlock：`Run rules first`
+- Loading:
+  - Phase 1：`Analyzing…`
+  - Phase 2：`Optimizing…`
+- Error:
+  - Phase 1：`Analysis failed. Retry`
+  - Phase 2：`Optimization failed. Retry`
+
+### Accessibility（最低要求）
+
+- 所有可点击操作在 hover 外也可通过键盘触达（Tab/Enter）
+- 右侧错误列表支持 aria-selected 与可见焦点样式
+- 命令面板可 Esc 关闭，且不会造成焦点丢失
+
 ## Notes (Why v2 is more accurate)
 
 - 以“端到端可跑通”为核心：明确匿名策略、所有权校验、状态机、限流与降级路径。

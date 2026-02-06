@@ -51,9 +51,9 @@ describe('ErrorHighlight', () => {
 
     const spans = wrapper.findAll('span[data-error-id]')
     expect(spans).toHaveLength(3)
-    expect(spans[0].text()).toBe('what')
-    expect(spans[1].text()).toBe('is')
-    expect(spans[2].text()).toBe('nama')
+    expect(spans[0]!.text()).toBe('what')
+    expect(spans[1]!.text()).toBe('is')
+    expect(spans[2]!.text()).toBe('nama')
   })
 
   it('renders corrected text with highlights correctly', () => {
@@ -77,9 +77,9 @@ describe('ErrorHighlight', () => {
     expect(spans).toHaveLength(3)
     
     // Verify span content is from correctedText
-    expect(spans[0].text()).toBe('What')
-    expect(spans[1].text()).toBe('are')
-    expect(spans[2].text()).toBe('name')
+    expect(spans[0]!.text()).toBe('What')
+    expect(spans[1]!.text()).toBe('are')
+    expect(spans[2]!.text()).toBe('name')
 
     // Verify surrounding text is preserved/reconstructed correctly
     // The component renders HTML, so let's check the full text content of the container

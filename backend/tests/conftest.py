@@ -11,6 +11,8 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from models import Base, get_db
 from models.user import User, UserSettings
+from models.analysis import Analysis
+from models.llm_provider import LLMProvider
 from core.security import hash_password
 
 
@@ -73,6 +75,7 @@ def test_user(test_db: Session) -> User:
         is_verified=True
     )
     test_db.add(user)
+    test_db.flush()
 
     settings = UserSettings(
         user_id=user.id,

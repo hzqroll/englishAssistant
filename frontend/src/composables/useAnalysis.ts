@@ -16,6 +16,10 @@ export function useAnalysis() {
   const viewMode = computed(() => analysisStore.viewMode)
   const error = computed(() => analysisStore.error)
   const progress = computed(() => analysisStore.progress)
+  const ruleResult = computed(() => analysisStore.ruleResult)
+  const llmResult = computed(() => analysisStore.llmResult)
+  const isOptimizing = computed(() => analysisStore.isOptimizing)
+  const llmError = computed(() => analysisStore.llmError)
 
   // Derived computed
   const hasErrors = computed(() => {
@@ -33,6 +37,14 @@ export function useAnalysis() {
   // Actions
   async function analyzeText(text: string, correctionMode: CorrectionMode) {
     return await analysisStore.analyzeText(text, correctionMode)
+  }
+
+  async function analyzeWithRules(text: string, correctionMode: CorrectionMode) {
+    return await analysisStore.analyzeWithRules(text, correctionMode)
+  }
+
+  async function optimizeWithLLM(analysisId?: string) {
+    return await analysisStore.optimizeWithLLM(analysisId)
   }
 
   function setCorrectionMode(newMode: CorrectionMode) {
@@ -58,10 +70,16 @@ export function useAnalysis() {
     viewMode,
     error,
     progress,
+    ruleResult,
+    llmResult,
+    isOptimizing,
+    llmError,
     hasErrors,
     errorCount,
     learningTips,
     analyzeText,
+    analyzeWithRules,
+    optimizeWithLLM,
     setCorrectionMode,
     setViewMode,
     resetAnalysis,

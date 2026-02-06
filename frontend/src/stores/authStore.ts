@@ -1,14 +1,16 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type { AuthState, User } from './types'
-import { authApi } from '@/api/auth'
-// TODO: Import token refresh utilities
+import { authApi, type LoginRequest, type RegisterRequest } from '@/api/auth'
+
+const TOKEN_KEY = 'auth_token'
+const REFRESH_TOKEN_KEY = 'refresh_token'
 
 export const useAuthStore = defineStore('auth', () => {
   // State
   const user = ref<User | null>(null)
-  const accessToken = ref<string | null>(localStorage.getItem('access_token'))
-  const refreshToken_val = ref<string | null>(localStorage.getItem('refresh_token'))
+  const accessToken = ref<string | null>(localStorage.getItem(TOKEN_KEY))
+  const refreshToken_val = ref<string | null>(localStorage.getItem(REFRESH_TOKEN_KEY))
   const isLoading = ref(false)
   const error = ref<string | null>(null)
 
@@ -24,24 +26,12 @@ export const useAuthStore = defineStore('auth', () => {
   }))
 
   // Actions
-  async function login(email: string, password: string) {
+  async function login(credentials: LoginRequest) {
     isLoading.value = true
     error.value = null
     try {
-      const response = await authApi.login({ email, password })
-      accessToken.value = response.data.access_token
-      refreshToken_val.value = response.data.refresh_token
-      localStorage.setItem('access_token', response.data.access_token)
-      localStorage.setItem('refresh_token', response.data.refresh_token)
-
-      // Set user data from response
-      user.value = {
-        id: response.data.user_id,
-        email: response.data.email,
-        username: response.data.email.split('@')[0], // Default username from email
-        tier: response.data.tier,
-        createdAt: new Date().toISOString(),
-      }
+      const response = await authApi.login(credentials)
+      setTokens(response.data.access_token, response.data.refresh_token)
 
       // Fetch full user profile
       await fetchUserProfile()
@@ -53,26 +43,12 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
-  async function register(email: string, password: string, username?: string) {
+  async function register(credentials: RegisterRequest) {
     isLoading.value = true
     error.value = null
     try {
-      const response = await authApi.register({ email, password, username: username || email.split('@')[0] })
-
-      // Set tokens from registration response
-      accessToken.value = response.data.access_token
-      refreshToken_val.value = response.data.refresh_token
-      localStorage.setItem('access_token', response.data.access_token)
-      localStorage.setItem('refresh_token', response.data.refresh_token)
-
-      // Set user data
-      user.value = {
-        id: response.data.user_id,
-        email: response.data.email,
-        username: username || email.split('@')[0],
-        tier: response.data.tier,
-        createdAt: new Date().toISOString(),
-      }
+      const response = await authApi.register(credentials)
+      setTokens(response.data.access_token, response.data.refresh_token)
 
       // Fetch full user profile
       await fetchUserProfile()
@@ -84,12 +60,19 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
+  function setTokens(access: string, refresh: string) {
+    accessToken.value = access
+    refreshToken_val.value = refresh
+    localStorage.setItem(TOKEN_KEY, access)
+    localStorage.setItem(REFRESH_TOKEN_KEY, refresh)
+  }
+
   async function logout() {
     user.value = null
     accessToken.value = null
     refreshToken_val.value = null
-    localStorage.removeItem('access_token')
-    localStorage.removeItem('refresh_token')
+    localStorage.removeItem(TOKEN_KEY)
+    localStorage.removeItem(REFRESH_TOKEN_KEY)
     error.value = null
   }
 
@@ -98,15 +81,21 @@ export const useAuthStore = defineStore('auth', () => {
 
     try {
       const response = await authApi.me()
+      const userData = response.data
       user.value = {
-        id: response.data.id,
-        email: response.data.email,
-        username: response.data.email.split('@')[0],
-        tier: response.data.tier,
-        createdAt: response.data.created_at,
+        id: userData.id,
+        email: userData.email,
+        username: userData.email.split('@')[0], // Fallback if backend doesn't return username
+        tier: userData.tier,
+        createdAt: userData.created_at,
       }
     } catch (err: any) {
-      error.value = err.response?.data?.detail || err.response?.data?.message || 'Failed to fetch user profile'
+      console.error('Fetch profile failed:', err)
+      error.value = err.response?.data?.detail || 'Failed to fetch user profile'
+      // If unauthorized, log out
+      if (err.response?.status === 401) {
+        await logout()
+      }
     }
   }
 
@@ -119,9 +108,7 @@ export const useAuthStore = defineStore('auth', () => {
     try {
       const response = await authApi.refresh({ refresh_token: refreshToken_val.value })
       accessToken.value = response.data.access_token
-      refreshToken_val.value = response.data.refresh_token
-      localStorage.setItem('access_token', response.data.access_token)
-      localStorage.setItem('refresh_token', response.data.refresh_token)
+      localStorage.setItem(TOKEN_KEY, response.data.access_token)
     } catch (err) {
       await logout()
       throw err

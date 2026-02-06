@@ -27,11 +27,8 @@ describe('authStore', () => {
       data: {
         access_token: 'acc_token',
         refresh_token: 'ref_token',
-        user_id: '123',
-        email: 'test@test.com',
-        tier: 'free'
       }
-    })
+    } as any)
 
     // Mock me response
     vi.mocked(authApi.me).mockResolvedValue({
@@ -41,7 +38,7 @@ describe('authStore', () => {
         tier: 'free',
         created_at: '2024-01-01'
       }
-    })
+    } as any)
 
     await store.login('test@test.com', 'pass')
 
@@ -50,23 +47,24 @@ describe('authStore', () => {
     expect(store.user).toEqual({
       id: '123',
       email: 'test@test.com',
+      username: 'test',
       tier: 'free',
       createdAt: '2024-01-01'
     })
-    expect(localStorage.getItem('access_token')).toBe('acc_token')
+    expect(localStorage.getItem('auth_token')).toBe('acc_token')
   })
 
   it('handles logout', async () => {
     const store = useAuthStore()
     store.accessToken = 'token'
-    store.user = { id: '1', email: 'test', tier: 'free', createdAt: '' }
-    localStorage.setItem('access_token', 'token')
+    store.user = { id: '1', email: 'test@test.com', username: 'test', tier: 'free', createdAt: '' }
+    localStorage.setItem('auth_token', 'token')
 
     await store.logout()
 
     expect(store.isAuthenticated).toBe(false)
     expect(store.accessToken).toBeNull()
     expect(store.user).toBeNull()
-    expect(localStorage.getItem('access_token')).toBeNull()
+    expect(localStorage.getItem('auth_token')).toBeNull()
   })
 })

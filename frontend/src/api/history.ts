@@ -1,5 +1,5 @@
 import apiClient from './index'
-import type { HistoryItem, CorrectionMode } from '@/stores/types'
+import type { CorrectionMode } from '@/stores/types'
 
 /**
  * History API
@@ -34,20 +34,20 @@ export const historyApi = {
    * Get user's analysis history
    */
   async getList(params?: GetHistoryListParams) {
-    return apiClient.get<HistoryListResponse>('/history', { params })
+    return apiClient.get<HistoryListResponse>('/api/v1/history', { params })
   },
 
   /**
    * Get specific analysis detail
    */
   async getDetail(id: string) {
-    return apiClient.get<{ success: boolean; data: any }>(`/history/${id}`)
+    return apiClient.get<{ success: boolean; data: any }>(`/api/v1/history/${id}`)
   },
 
   /**
    * Delete analysis record
    */
   async delete(id: string) {
-    return apiClient.delete<{ success: boolean }>(`/history/${id}`)
+    return apiClient.delete<{ success: boolean }>(`/api/v1/history/${id}`)
   },
 }

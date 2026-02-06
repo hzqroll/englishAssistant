@@ -74,4 +74,66 @@ describe('InputPanel', () => {
     expect(button.attributes('disabled')).toBeDefined()
     expect(button.text()).toContain('分析中')
   })
+
+  it('clears text on button click', async () => {
+    const wrapper = mount(InputPanel, {
+      global: {
+        plugins: [createTestingPinia({
+          createSpy: vi.fn,
+          initialState: {
+            analysis: { isAnalyzing: false }
+          }
+        })]
+      }
+    })
+
+    const textarea = wrapper.find('textarea')
+    await textarea.setValue('Some text to clear')
+    
+    // Find clear button (there are two, one in header one in footer)
+    // Let's find the footer one which has text "清空"
+    const buttons = wrapper.findAll('button')
+    const clearBtn = buttons.find(b => b.text().includes('清空'))
+    
+    expect(clearBtn).toBeDefined()
+    await clearBtn?.trigger('click')
+    
+    expect(textarea.element.value).toBe('')
+  })
+
+  it('switches correction mode', async () => {
+    const wrapper = mount(InputPanel, {
+      global: {
+        plugins: [createTestingPinia({
+          createSpy: vi.fn,
+          initialState: {
+            analysis: { isAnalyzing: false }
+          }
+        })]
+      }
+    })
+
+    // Find mode buttons
+    const buttons = wrapper.findAll('button')
+    const naturalBtn = buttons.find(b => b.text().includes('自然度优先'))
+    const accuracyBtn = buttons.find(b => b.text().includes('准确性优先'))
+
+    expect(naturalBtn).toBeDefined()
+    expect(accuracyBtn).toBeDefined()
+
+    // Click natural mode
+    await naturalBtn?.trigger('click')
+    // Check if class changed (it has logic :class="selectedMode === ...")
+    // Since we can't easily check component internal state ref without exposing it,
+    // we check the visual class change.
+    // 'border-blue-500' indicates active.
+    
+    expect(naturalBtn?.classes()).toContain('border-blue-500')
+    expect(accuracyBtn?.classes()).not.toContain('border-blue-500')
+
+    // Click accuracy mode
+    await accuracyBtn?.trigger('click')
+    expect(accuracyBtn?.classes()).toContain('border-blue-500')
+    expect(naturalBtn?.classes()).not.toContain('border-blue-500')
+  })
 })

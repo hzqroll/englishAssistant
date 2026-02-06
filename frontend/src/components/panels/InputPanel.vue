@@ -3,7 +3,7 @@ import { ref, computed, watch } from 'vue'
 import { useAnalysis, useUI } from '@/composables'
 import type { CorrectionMode } from '@/stores/types'
 
-const { analyzeText, isAnalyzing, error, progress } = useAnalysis()
+const { analyzeText, isAnalyzing } = useAnalysis()
 const { showSuccess, showError, showToast } = useUI()
 
 const text = ref('')
@@ -12,7 +12,6 @@ const maxLength = 5000
 const minLength = 10
 
 const charCount = computed(() => text.value.length)
-const remainingChars = computed(() => maxLength - text.value.length)
 const canAnalyze = computed(() => {
   return !isAnalyzing.value &&
          text.value.trim().length >= minLength &&
@@ -21,7 +20,7 @@ const canAnalyze = computed(() => {
 
 const modeDescriptions = {
   accuracy: '纠正语法错误，保留原本风格',
-  natural: '改写成地道表达，可能调整结构'
+  naturalness: '改写成地道表达，可能调整结构'
 }
 
 watch(text, (newValue) => {
@@ -87,9 +86,9 @@ function clearText() {
             🎯 准确性优先
           </button>
           <button
-            @click="selectedMode = 'natural'"
+            @click="selectedMode = 'naturalness'"
             class="flex-1 px-3 py-2 rounded text-sm font-medium transition-all"
-            :class="selectedMode === 'natural'
+            :class="selectedMode === 'naturalness'
               ? 'bg-[rgba(59,130,246,0.2)] border border-blue-500 text-white'
               : 'text-slate-300 hover:bg-slate-700/50'"
           >

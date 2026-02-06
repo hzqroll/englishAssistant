@@ -224,6 +224,10 @@ class LLMEngine:
                 confidence=result_data.get("intent", {}).get("confidence", 0.8),
             )
 
+            metadata = {"mode": mode, "method": "combined_single_pass"}
+            if "learning_analysis" in result_data:
+                metadata["learning_analysis"] = result_data["learning_analysis"]
+
             return LLMResult(
                 optimized_text=result_data.get("optimized_text", text),
                 detected_intent=detected_intent,
@@ -232,7 +236,7 @@ class LLMEngine:
                 token_usage=self._estimate_tokens(text, result_data.get("optimized_text", text)),
                 model=self.model,
                 processing_time_ms=processing_time,
-                metadata={"mode": mode, "method": "combined_single_pass"},
+                metadata=metadata,
             )
 
         except Exception as e:
@@ -264,6 +268,7 @@ Task:
 1. Detect the intent (text type, tone, speakers, chinese content).
 2. {optimization_instruction}
 3. List specific corrections made.
+4. Provide learning analysis (error patterns, recommendations, tips).
 
 Return a JSON object with this EXACT structure:
 {{
@@ -284,7 +289,16 @@ Return a JSON object with this EXACT structure:
       "explanation": "brief explanation"
     }}
   ],
-  "explanation": "Overall summary of changes"
+  "explanation": "Overall summary of changes",
+  "learning_analysis": {{
+    "error_patterns": [
+      {{ "pattern_name": "Subject-Verb Agreement", "frequency": "High", "examples": [{{"original": "She go", "corrected": "She goes"}}], "severity": "high" }}
+    ],
+    "ea_learning_recommendations": [
+      {{ "priority": 1, "topic": "Past Tense", "description": "Review regular vs irregular verbs", "resources": [], "estimated_study_time": "15 mins" }}
+    ],
+    "personalized_tips": ["Pay attention to..."]
+  }}
 }}
 """
         

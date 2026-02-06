@@ -1,0 +1,803 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>English Assistant - Text Analysis</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Georgia&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-primary: #FFFFFF;
+            --bg-secondary: #F6F6F5;
+            --bg-hover: #F1F1EF;
+            --border: #EDEDED;
+            --border-strong: #DCDCDC;
+            --text-primary: #1A1A1A;
+            --text-secondary: #6B6B6B;
+            --text-tertiary: #9B9B9B;
+            --accent-blue: #0F7ACC;
+            --accent-blue-bg: #E8F4FD;
+            --accent-green: #3D8B5A;
+            --accent-green-bg: #E8F5EE;
+            --accent-red: #D44C47;
+            --accent-red-bg: #FDEBEB;
+            --accent-yellow: #D97706;
+            --accent-yellow-bg: #FEF3E2;
+            --shadow-subtle: 0 1px 3px rgba(0,0,0,0.04);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            line-height: 1.6;
+            min-height: 100vh;
+        }
+
+        /* Header */
+        .header {
+            border-bottom: 1px solid var(--border);
+            padding: 16px 24px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: var(--bg-primary);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .logo {
+            font-weight: 600;
+            font-size: 16px;
+            color: var(--text-primary);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .logo-icon {
+            width: 24px;
+            height: 24px;
+            background: linear-gradient(135deg, #0F7ACC 0%, #3D8B5A 100%);
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .header-actions {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .header-btn {
+            padding: 8px 14px;
+            font-size: 13px;
+            font-weight: 500;
+            border-radius: 6px;
+            border: none;
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+
+        .header-btn.secondary {
+            background: transparent;
+            color: var(--text-secondary);
+        }
+
+        .header-btn.secondary:hover {
+            background: var(--bg-hover);
+            color: var(--text-primary);
+        }
+
+        .header-btn.primary {
+            background: var(--text-primary);
+            color: white;
+        }
+
+        .header-btn.primary:hover {
+            background: #2A2A2A;
+        }
+
+        /* Main Layout */
+        .main-container {
+            display: grid;
+            grid-template-columns: 320px 1fr 1fr;
+            min-height: calc(100vh - 57px);
+        }
+
+        /* Input Panel */
+        .input-panel {
+            border-right: 1px solid var(--border);
+            padding: 24px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .panel-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 16px;
+        }
+
+        .panel-title {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .input-wrapper {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .text-input {
+            flex: 1;
+            min-height: 200px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 16px;
+            font-family: 'Georgia', serif;
+            font-size: 15px;
+            line-height: 1.7;
+            resize: none;
+            outline: none;
+            transition: border-color 0.15s ease, box-shadow 0.15s ease;
+        }
+
+        .text-input:focus {
+            border-color: var(--accent-blue);
+            box-shadow: 0 0 0 3px rgba(15, 122, 204, 0.1);
+        }
+
+        .text-input::placeholder {
+            color: var(--text-tertiary);
+            font-family: 'Inter', sans-serif;
+        }
+
+        .mode-selector {
+            display: flex;
+            gap: 8px;
+            margin-top: 16px;
+            padding: 4px;
+            background: var(--bg-secondary);
+            border-radius: 8px;
+        }
+
+        .mode-option {
+            flex: 1;
+            padding: 10px 16px;
+            font-size: 13px;
+            font-weight: 500;
+            text-align: center;
+            border-radius: 6px;
+            border: none;
+            background: transparent;
+            color: var(--text-secondary);
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+
+        .mode-option.active {
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            box-shadow: var(--shadow-subtle);
+        }
+
+        .analyze-btn {
+            margin-top: 16px;
+            padding: 14px 20px;
+            font-size: 14px;
+            font-weight: 600;
+            background: var(--text-primary);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        .analyze-btn:hover {
+            background: #2A2A2A;
+            transform: translateY(-1px);
+        }
+
+        .analyze-btn:active {
+            transform: translateY(0);
+        }
+
+        /* Results Panels */
+        .results-container {
+            display: flex;
+        }
+
+        .result-panel {
+            flex: 1;
+            padding: 24px;
+            border-right: 1px solid var(--border);
+            min-width: 0;
+        }
+
+        .result-panel:last-child {
+            border-right: none;
+        }
+
+        .empty-state {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            color: var(--text-tertiary);
+            text-align: center;
+            padding: 40px 20px;
+        }
+
+        .empty-state-icon {
+            width: 48px;
+            height: 48px;
+            border: 2px dashed var(--border-strong);
+            border-radius: 12px;
+            margin-bottom: 16px;
+        }
+
+        .empty-state-text {
+            font-size: 13px;
+            color: var(--text-secondary);
+        }
+
+        /* Rule Engine Results */
+        .results-content {
+            animation: fadeIn 0.3s ease;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(8px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .result-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 20px;
+        }
+
+        .result-title {
+            font-size: 15px;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        .result-badge {
+            padding: 4px 10px;
+            font-size: 12px;
+            font-weight: 500;
+            border-radius: 4px;
+            background: var(--accent-blue-bg);
+            color: var(--accent-blue);
+        }
+
+        .error-cards {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .error-card {
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 16px;
+            background: var(--bg-primary);
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+
+        .error-card:hover {
+            border-color: var(--border-strong);
+            box-shadow: var(--shadow-subtle);
+        }
+
+        .error-card-header {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            margin-bottom: 12px;
+        }
+
+        .error-icon {
+            width: 20px;
+            height: 20px;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 10px;
+            flex-shrink: 0;
+        }
+
+        .error-icon.grammar {
+            background: var(--accent-red-bg);
+            color: var(--accent-red);
+        }
+
+        .error-icon.spelling {
+            background: var(--accent-yellow-bg);
+            color: var(--accent-yellow);
+        }
+
+        .error-icon.punctuation {
+            background: var(--accent-blue-bg);
+            color: var(--accent-blue);
+        }
+
+        .error-content {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .error-title {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 4px;
+        }
+
+        .error-rule {
+            font-size: 11px;
+            color: var(--text-tertiary);
+            font-family: monospace;
+        }
+
+        .error-text {
+            padding: 12px;
+            background: var(--bg-secondary);
+            border-radius: 6px;
+            font-size: 14px;
+            line-height: 1.6;
+        }
+
+        .error-highlight {
+            background: var(--accent-red-bg);
+            border-bottom: 2px solid var(--accent-red);
+            padding: 2px 4px;
+            margin: -2px -4px;
+        }
+
+        .error-correction {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-top: 12px;
+            padding-top: 12px;
+            border-top: 1px solid var(--border);
+        }
+
+        .correction-label {
+            font-size: 11px;
+            font-weight: 600;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+        }
+
+        .correction-text {
+            font-size: 13px;
+            color: var(--accent-green);
+        }
+
+        /* LLM Panel */
+        .llm-ready-state {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            padding: 40px 20px;
+        }
+
+        .optimize-button {
+            padding: 16px 24px;
+            font-size: 14px;
+            font-weight: 600;
+            background: linear-gradient(135deg, var(--accent-blue) 0%, #0A5A9A 100%);
+            color: white;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            transition: all 0.2s ease;
+            box-shadow: 0 4px 14px rgba(15, 122, 204, 0.3);
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { box-shadow: 0 4px 14px rgba(15, 122, 204, 0.3); }
+            50% { box-shadow: 0 4px 20px rgba(15, 122, 204, 0.5); }
+        }
+
+        .optimize-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(15, 122, 204, 0.4);
+        }
+
+        .optimize-button .sparkle {
+            font-size: 16px;
+        }
+
+        .token-estimate {
+            margin-top: 12px;
+            font-size: 12px;
+            color: var(--text-tertiary);
+        }
+
+        /* Statistics */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 12px;
+            margin-top: 24px;
+            padding-top: 24px;
+            border-top: 1px solid var(--border);
+        }
+
+        .stat-item {
+            text-align: center;
+        }
+
+        .stat-value {
+            font-size: 24px;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        .stat-label {
+            font-size: 11px;
+            color: var(--text-tertiary);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-top: 4px;
+        }
+
+        /* Learning Section */
+        .learning-section {
+            margin-top: 24px;
+            padding: 16px;
+            background: var(--bg-secondary);
+            border-radius: 8px;
+        }
+
+        .learning-title {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .learning-tip {
+            font-size: 13px;
+            line-height: 1.6;
+            color: var(--text-secondary);
+        }
+
+        /* Footer */
+        .footer {
+            padding: 16px 24px;
+            border-top: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            font-size: 12px;
+            color: var(--text-tertiary);
+        }
+
+        /* Responsive */
+        @media (max-width: 1024px) {
+            .main-container {
+                grid-template-columns: 1fr;
+            }
+
+            .input-panel {
+                border-right: none;
+                border-bottom: 1px solid var(--border);
+            }
+
+            .results-container {
+                flex-direction: column;
+            }
+
+            .result-panel {
+                border-right: none;
+                border-bottom: 1px solid var(--border);
+            }
+        }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: var(--border-strong);
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #C5C5C5;
+        }
+    </style>
+</head>
+<body>
+    <!-- Header -->
+    <header class="header">
+        <div class="logo">
+            <div class="logo-icon">EA</div>
+            <span>English Assistant</span>
+        </div>
+        <div class="header-actions">
+            <button class="header-btn secondary">History</button>
+            <button class="header-btn secondary">Settings</button>
+            <button class="header-btn primary">Sign In</button>
+        </div>
+    </header>
+
+    <!-- Main Container -->
+    <main class="main-container">
+        <!-- Input Panel -->
+        <section class="input-panel">
+            <div class="panel-header">
+                <span class="panel-title">Input</span>
+            </div>
+            <div class="input-wrapper">
+                <textarea
+                    class="text-input"
+                    placeholder="Enter your English text here..."
+                    id="textInput"
+                >She dont like pizza, but she love pasta.</textarea>
+            </div>
+            <div class="mode-selector">
+                <button class="mode-option active" data-mode="accuracy">Accuracy First</button>
+                <button class="mode-option" data-mode="natural">Naturalness</button>
+            </div>
+            <button class="analyze-btn" id="analyzeBtn">
+                <span>Analyze</span>
+                <span>→</span>
+            </button>
+        </section>
+
+        <!-- Results Container -->
+        <div class="results-container">
+            <!-- Rule Engine Panel -->
+            <section class="result-panel" id="rulePanel">
+                <div class="panel-header">
+                    <span class="panel-title">Rule-Based Analysis</span>
+                    <span class="result-badge">LanguageTool</span>
+                </div>
+
+                <div class="results-content" id="ruleResults" style="display: none;">
+                    <div class="result-header">
+                        <span class="result-title">2 Issues Found</span>
+                    </div>
+
+                    <div class="error-cards">
+                        <!-- Error 1 -->
+                        <div class="error-card">
+                            <div class="error-card-header">
+                                <div class="error-icon grammar">G</div>
+                                <div class="error-content">
+                                    <div class="error-title">Subject-Verb Agreement</div>
+                                    <div class="error-rule">AGREEMENT_SUBJECT_VERB</div>
+                                </div>
+                            </div>
+                            <div class="error-text">
+                                She <span class="error-highlight">dont</span> like pizza
+                            </div>
+                            <div class="error-correction">
+                                <span class="correction-label">Suggestion:</span>
+                                <span class="correction-text">doesn't</span>
+                            </div>
+                        </div>
+
+                        <!-- Error 2 -->
+                        <div class="error-card">
+                            <div class="error-card-header">
+                                <div class="error-icon grammar">G</div>
+                                <div class="error-content">
+                                    <div class="error-title">Subject-Verb Agreement</div>
+                                    <div class="error-rule">AGREEMENT_SUBJECT_VERB</div>
+                                </div>
+                            </div>
+                            <div class="error-text">
+                                but she <span class="error-highlight">love</span> pasta
+                            </div>
+                            <div class="error-correction">
+                                <span class="correction-label">Suggestion:</span>
+                                <span class="correction-text">loves</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="stats-grid">
+                        <div class="stat-item">
+                            <div class="stat-value">2</div>
+                            <div class="stat-label">Grammar</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-value">0</div>
+                            <div class="stat-label">Spelling</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-value">0</div>
+                            <div class="stat-label">Style</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="empty-state" id="ruleEmpty">
+                    <div class="empty-state-icon"></div>
+                    <div class="empty-state-text">Click "Analyze" to check your text</div>
+                </div>
+            </section>
+
+            <!-- LLM Panel -->
+            <section class="result-panel" id="llmPanel">
+                <div class="panel-header">
+                    <span class="panel-title">AI Deep Analysis</span>
+                    <span class="result-badge">✨ Optional</span>
+                </div>
+
+                <div class="llm-ready-state" id="llmReady" style="display: none;">
+                    <button class="optimize-button" id="optimizeBtn">
+                        <span class="sparkle">✨</span>
+                        <span>AI Deep Optimize</span>
+                    </button>
+                    <div class="token-estimate">Estimated: ~12 tokens</div>
+                </div>
+
+                <div class="results-content" id="llmResults" style="display: none;">
+                    <div class="result-header">
+                        <span class="result-title">Optimization Complete</span>
+                    </div>
+
+                    <div class="error-cards">
+                        <div class="error-card">
+                            <div class="error-card-header">
+                                <div class="error-icon grammar">✓</div>
+                                <div class="error-content">
+                                    <div class="error-title">Corrected Text</div>
+                                </div>
+                            </div>
+                            <div class="error-text" style="background: var(--accent-green-bg);">
+                                She <strong>doesn't</strong> like pizza, but she <strong>loves</strong> pasta.
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="learning-section">
+                        <div class="learning-title">
+                            <span>💡</span>
+                            <span>Learning Tip</span>
+                        </div>
+                        <div class="learning-tip">
+                            Third-person singular verbs in present tense always end with "-s" or "-es". Remember: He/She/It + verb-s.
+                        </div>
+                    </div>
+                </div>
+
+                <div class="empty-state" id="llmEmpty">
+                    <div class="empty-state-icon"></div>
+                    <div class="empty-state-text">Complete rule analysis first</div>
+                </div>
+            </section>
+        </div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <span>Processing time: <strong id="processTime">--</strong></span>
+        <span>English Assistant v1.0</span>
+    </footer>
+
+    <script>
+        // State
+        let currentMode = 'accuracy';
+        let hasRuleResults = false;
+        let hasLLMResults = false;
+
+        // Elements
+        const textInput = document.getElementById('textInput');
+        const analyzeBtn = document.getElementById('analyzeBtn');
+        const ruleResults = document.getElementById('ruleResults');
+        const ruleEmpty = document.getElementById('ruleEmpty');
+        const llmEmpty = document.getElementById('llmEmpty');
+        const llmReady = document.getElementById('llmReady');
+        const llmResults = document.getElementById('llmResults');
+        const optimizeBtn = document.getElementById('optimizeBtn');
+        const processTime = document.getElementById('processTime');
+        const modeOptions = document.querySelectorAll('.mode-option');
+
+        // Mode selection
+        modeOptions.forEach(option => {
+            option.addEventListener('click', () => {
+                modeOptions.forEach(opt => opt.classList.remove('active'));
+                option.classList.add('active');
+                currentMode = option.dataset.mode;
+            });
+        });
+
+        // Analyze button
+        analyzeBtn.addEventListener('click', () => {
+            // Simulate processing
+            analyzeBtn.innerHTML = '<span>Analyzing...</span>';
+            analyzeBtn.disabled = true;
+
+            setTimeout(() => {
+                hasRuleResults = true;
+                ruleEmpty.style.display = 'none';
+                ruleResults.style.display = 'block';
+                llmEmpty.style.display = 'none';
+                llmReady.style.display = 'flex';
+                processTime.textContent = '2.3s';
+
+                analyzeBtn.innerHTML = '<span>Analyze</span><span>→</span>';
+                analyzeBtn.disabled = false;
+            }, 1200);
+        });
+
+        // Optimize button
+        optimizeBtn.addEventListener('click', () => {
+            optimizeBtn.innerHTML = '<span class="sparkle">⟳</span><span>Optimizing...</span>';
+            optimizeBtn.style.animation = 'none';
+
+            setTimeout(() => {
+                hasLLMResults = true;
+                llmReady.style.display = 'none';
+                llmResults.style.display = 'block';
+                processTime.textContent = '4.1s';
+            }, 1500);
+        });
+
+        // Initial state - show demo results
+        setTimeout(() => {
+            hasRuleResults = true;
+            ruleEmpty.style.display = 'none';
+            ruleResults.style.display = 'block';
+            llmEmpty.style.display = 'none';
+            llmReady.style.display = 'flex';
+            processTime.textContent = '2.3s';
+        }, 500);
+    </script>
+</body>
+</html>

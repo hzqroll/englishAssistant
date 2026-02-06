@@ -62,6 +62,7 @@ class Analysis(Base, TimestampMixin, SoftDeleteMixin):
     # Analysis parameters
     mode = Column(String(50), nullable=False)  # accuracy, natural
     text_type = Column(String(50), default="unknown")  # dialogue, email, essay, etc.
+    status = Column(String(20), nullable=False, default="rule_only", index=True)
 
     # Statistics (JSONB for flexibility)
     # Format: {
@@ -70,7 +71,7 @@ class Analysis(Base, TimestampMixin, SoftDeleteMixin):
     #   "sentence_count": 10,
     #   "word_count": 150
     # }
-    statistics = Column(JSONB, default=dict, nullable=False)
+    statistics = Column(JSON().with_variant(JSONB, "postgresql"), default=dict, nullable=False)
 
     # Performance metrics
     processing_time_ms = Column(Integer, default=0)
@@ -85,7 +86,7 @@ class Analysis(Base, TimestampMixin, SoftDeleteMixin):
     #   "model": "glm-4-flash",
     #   "llm_tokens": {"input": 100, "output": 200, "total": 300}
     # }
-    token_usage = Column(JSONB, nullable=False, default=dict)
+    token_usage = Column(JSON().with_variant(JSONB, "postgresql"), nullable=False, default=dict)
 
     # Relationships
     user = relationship("User", back_populates="analyses")
@@ -181,6 +182,12 @@ class ErrorDetail(Base):
     # Error classification
     error_type = Column(String(50), nullable=False, index=True)
     error_subtype = Column(String(100))
+
+    # LanguageTool details
+    rule_id = Column(String(100), index=True)
+    category = Column(String(50), index=True)
+    message = Column(Text)
+    context = Column(Text)
 
     # Error content
     original_span = Column(String(500), nullable=False)
@@ -339,7 +346,7 @@ class AnalysisCache(Base):
     __tablename__ = "ea_analysis_cache"
 
     content_hash = Column(String(64), primary_key=True)
-    cached_result = Column(JSONB, nullable=False)
+    cached_result = Column(JSON().with_variant(JSONB, "postgresql"), nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     expires_at = Column(DateTime, nullable=False, index=True)
 

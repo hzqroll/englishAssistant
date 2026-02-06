@@ -60,12 +60,6 @@ function handleCopy(text: string) {
 function handleErrorClick() {
   emit('errorClick', props.error)
 }
-
-function getCorrectedHtml() {
-  const original = props.error.originalText
-  const corrected = props.error.correctedText
-  return `<span class="line-through text-red-600 opacity-70">${original}</span> <span class="text-green-600 font-medium">${corrected}</span>`
-}
 </script>
 
 <template>

@@ -1,10 +1,20 @@
 <script setup lang="ts">
+import { onMounted } from 'vue'
 import { RouterView } from 'vue-router'
 import LoginModal from '@/components/auth/LoginModal.vue'
 import Toast from '@/components/common/Toast.vue'
 import { useUIStore } from '@/stores/uiStore'
+import { useAuthStore } from '@/stores/authStore'
 
 const uiStore = useUIStore()
+const authStore = useAuthStore()
+
+onMounted(async () => {
+  // Try to restore auth state if token exists
+  if (localStorage.getItem('auth_token')) {
+    await authStore.fetchUserProfile()
+  }
+})
 </script>
 
 <template>
@@ -17,10 +27,7 @@ const uiStore = useUIStore()
       <Toast
         v-for="toast in uiStore.toasts"
         :key="toast.id"
-        :message="toast.message"
-        :type="toast.type"
-        :duration="toast.duration"
-        @close="uiStore.removeToast(toast.id)"
+        :toast="toast"
       />
     </div>
   </div>

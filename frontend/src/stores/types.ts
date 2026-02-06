@@ -52,14 +52,23 @@ export interface AnalysisResult {
 
 // LanguageTool Error Types
 export interface LTError {
-  rule_id: string
-  category: string // GRAMMAR, TYPOS, PUNCTUATION, etc.
-  severity: string // ERROR, WARNING
-  position: { start: number; end: number }
-  original_text: string
-  replacements: string[]
-  message: string
-  context: string
+  // Matching backend ErrorDetailResponse
+  error_type: string
+  error_subtype?: string
+  original_span: string
+  corrected_span: string
+  start_index: number
+  end_index: number
+  explanation: string
+  rule_description: string
+  severity: string
+  
+  // Additional fields from metadata if passed
+  rule_id?: string
+  category?: string
+  message?: string
+  context?: string
+  replacements?: string[] // Backend might not return this in the main response list unless added
 }
 
 export interface RuleBasedStatistics {
@@ -70,7 +79,7 @@ export interface RuleBasedStatistics {
 export interface RuleBasedResult {
   analysis_id: string
   errors: LTError[]
-  corrected_text: string
+  corrected_text: string // This is usually empty for rules-only unless we apply them
   statistics: RuleBasedStatistics
   processing_time_ms: number
   estimated_llm_tokens: number
@@ -128,7 +137,8 @@ export interface LearningAnalysis {
 }
 
 export interface LLMResult {
-  optimized_text: string
+  optimized_text?: string
+  corrected_text?: string // Fallback property
   suggestions: LLMSuggestion[]
   chinese_corrections: ChineseCorrection[]
   learning_analysis: LearningAnalysis

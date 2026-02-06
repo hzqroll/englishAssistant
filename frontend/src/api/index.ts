@@ -1,76 +1,39 @@
-import axios, { AxiosError } from 'axios'
-import type { AxiosInstance, InternalAxiosRequestConfig, AxiosResponse } from 'axios'
-import { useAuthStore } from '@/stores'
+import axios from 'axios'
 
-// TODO: Import token refresh utilities
-
-/**
- * Create axios instance with default configuration
- */
-const apiClient: AxiosInstance = axios.create({
-  baseURL: '/api/v1',
-  timeout: 30000,
+// Create axios instance with default config
+export const apiClient = axios.create({
+  baseURL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000',
+  timeout: 300000, // 300 seconds (5 minutes)
   headers: {
-    'Content-Type': 'application/json',
-  },
+    'Content-Type': 'application/json'
+  }
 })
 
-/**
- * Request interceptor
- * Adds auth token to requests
- */
+// Request interceptor to add auth token
 apiClient.interceptors.request.use(
-  (config: InternalAxiosRequestConfig) => {
-    // TODO: Add auth token to headers
-    const authStore = useAuthStore()
-    if (authStore.accessToken) {
-      config.headers = config.headers || {}
-      config.headers.Authorization = `Bearer ${authStore.accessToken}`
+  (config) => {
+    const token = localStorage.getItem('auth_token')
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`
     }
     return config
   },
-  (error: AxiosError) => {
+  (error) => {
     return Promise.reject(error)
   }
 )
 
-/**
- * Response interceptor
- * Handles token refresh and error responses
- */
+// Response interceptor to handle errors
 apiClient.interceptors.response.use(
-  (response: AxiosResponse) => {
+  (response) => {
     return response
   },
-  async (error: AxiosError) => {
-    const originalRequest = error.config as InternalAxiosRequestConfig & { _retry?: boolean }
-
-    // Handle 401 errors - token expired
-    if (error.response?.status === 401 && !originalRequest._retry) {
-      // Prevent infinite loop if the refresh request itself fails
-      if (originalRequest.url?.includes('/auth/refresh')) {
-        return Promise.reject(error)
-      }
-
-      originalRequest._retry = true
-
-      try {
-        const authStore = useAuthStore()
-        await authStore.refreshAccessToken()
-
-        // Retry original request with new token
-        if (originalRequest.headers) {
-          originalRequest.headers.Authorization = `Bearer ${authStore.accessToken}`
-        }
-
-        return apiClient(originalRequest)
-      } catch (refreshError) {
-        // Refresh failed, redirect to login
-        // TODO: Redirect to login page
-        return Promise.reject(refreshError)
-      }
+  (error) => {
+    if (error.response?.status === 401) {
+      // Handle unauthorized access
+      localStorage.removeItem('auth_token')
+      window.location.href = '/login'
     }
-
     return Promise.reject(error)
   }
 )

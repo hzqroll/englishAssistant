@@ -262,12 +262,12 @@ class RateLimitService:
 
         if not credit:
             logger.info(f"[GET_CREDIT] No existing credit found, creating new - quota_type: {quota_type}")
-            from models import get_uuid
+            import uuid
 
             logger.info(f"[GET_CREDIT] Creating APICredit with - quota_type: {quota_type}, quota: {limit}, user_id: {user_id_uuid}")
 
             credit = APICredit(
-                id=get_uuid(),
+                id=uuid.uuid4(),
                 user_id=user_id_uuid,
                 quota_type=quota_type,
                 quota=limit,
